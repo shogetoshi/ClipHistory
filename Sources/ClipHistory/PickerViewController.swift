@@ -21,6 +21,8 @@ final class PickerViewController: NSViewController {
     private let previewBox = NSBox()
     private let previewScrollView = NSScrollView()
     private let previewTextView = NSTextView()
+    // 画像プレビュー用（Issue 0004）。テキストと排他的に previewBox 内に表示する。
+    private let previewImageView = NSImageView()
     /// プレビューとして読み込む最大文字数。一覧より大きく取り、長文もある程度確認できるようにする。
     private static let previewMaxCharacters = 4000
 
@@ -120,6 +122,15 @@ final class PickerViewController: NSViewController {
         previewBox.cornerRadius = 6
         previewBox.titlePosition = .noTitle
         previewBox.addSubview(previewScrollView)
+
+        // 画像プレビュー（Issue 0004）。previewScrollView と同じ領域に重ねて配置し、
+        // 表示時はテキスト側を隠すことで排他的に切り替える。
+        previewImageView.translatesAutoresizingMaskIntoConstraints = false
+        previewImageView.imageScaling = .scaleProportionallyUpOrDown
+        previewImageView.imageAlignment = .alignCenter
+        previewImageView.isHidden = true
+        previewBox.addSubview(previewImageView)
+
         root.addSubview(previewBox)
 
         NSLayoutConstraint.activate([
@@ -142,7 +153,12 @@ final class PickerViewController: NSViewController {
             previewScrollView.topAnchor.constraint(equalTo: previewBox.topAnchor, constant: 1),
             previewScrollView.leadingAnchor.constraint(equalTo: previewBox.leadingAnchor, constant: 1),
             previewScrollView.trailingAnchor.constraint(equalTo: previewBox.trailingAnchor, constant: -1),
-            previewScrollView.bottomAnchor.constraint(equalTo: previewBox.bottomAnchor, constant: -1)
+            previewScrollView.bottomAnchor.constraint(equalTo: previewBox.bottomAnchor, constant: -1),
+
+            previewImageView.topAnchor.constraint(equalTo: previewBox.topAnchor, constant: 1),
+            previewImageView.leadingAnchor.constraint(equalTo: previewBox.leadingAnchor, constant: 1),
+            previewImageView.trailingAnchor.constraint(equalTo: previewBox.trailingAnchor, constant: -1),
+            previewImageView.bottomAnchor.constraint(equalTo: previewBox.bottomAnchor, constant: -1)
         ])
 
         view = root
@@ -200,9 +216,24 @@ final class PickerViewController: NSViewController {
         let row = tableView.selectedRow
         guard !items.isEmpty, row >= 0, row < items.count else {
             previewTextView.string = ""
+            showPreviewImage(nil)
             return
         }
         let item = items[row]
+
+        // 画像アイテムの場合は画像を優先して表示する。取得・生成に失敗した場合は
+        // テキストプレビューにフォールバックする（Issue 0004）。
+        if item.kind == .image {
+            do {
+                if let loaded = try historyStore.loadPreviewImageData(itemID: item.id), let image = NSImage(data: loaded.data) {
+                    showPreviewImage(image)
+                    return
+                }
+            } catch {
+                NSLog("ClipHistory: HistoryStore.loadPreviewImageData(itemID:) failed: \(error)")
+            }
+        }
+
         let text: String
         do {
             if let loaded = try historyStore.loadPreviewText(itemID: item.id, maxCharacters: Self.previewMaxCharacters) {
@@ -217,6 +248,15 @@ final class PickerViewController: NSViewController {
         }
         previewTextView.string = text
         previewTextView.scrollToBeginningOfDocument(nil)
+        showPreviewImage(nil)
+    }
+
+    /// プレビューの表示モードを切り替える。画像とテキストは同じ領域を共有するため、
+    /// 一方を表示する際は他方を隠して排他的に表示する（Issue 0004）。
+    private func showPreviewImage(_ image: NSImage?) {
+        previewImageView.image = image
+        previewImageView.isHidden = image == nil
+        previewScrollView.isHidden = image != nil
     }
 
     private func moveSelection(by delta: Int) {
