@@ -149,7 +149,7 @@ final class PickerViewController: NSViewController {
     }
 
     /// パネル表示のたびに `PickerPanelController` から呼ばれる。検索語をクリアし、
-    /// 最新の結果を再取得して先頭行を選択したうえで、検索フィールドへ入力フォーカスを移す。
+    /// 最新の結果を再取得して最終行（最新のアイテム）を選択したうえで、検索フィールドへ入力フォーカスを移す。
     func willShow() {
         searchField.stringValue = ""
         reloadDebounceTimer?.invalidate()
@@ -172,16 +172,21 @@ final class PickerViewController: NSViewController {
         do {
             // resultLimit は毎回 Settings から読み直す（設定画面での変更が次回の読み出しで
             // 反映されるようにするため。フェーズ4指示）。
-            items = try resultsProvider.results(for: query, limit: settings.resultLimit)
+            // プロバイダは最新順（先頭が最上位）で返すが、履歴なので最新を下に置きたいため
+            // ここで反転する（Issue 0003）。
+            items = Array(try resultsProvider.results(for: query, limit: settings.resultLimit).reversed())
         } catch {
             items = []
             NSLog("ClipHistory: ResultsProvider.results(for:) failed: \(error)")
         }
         tableView.reloadData()
         if !items.isEmpty {
-            tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+            // 反転後は最終行が最新のアイテムになるため、最終行を選択する（Issue 0003）。
+            let lastRow = items.count - 1
+            tableView.selectRowIndexes(IndexSet(integer: lastRow), byExtendingSelection: false)
+            tableView.scrollRowToVisible(lastRow)
         }
-        // selectRowIndexes は選択が実際に変わらない場合（例: 既に0行目が選択済み）に
+        // selectRowIndexes は選択が実際に変わらない場合（例: 既に最終行が選択済み）に
         // tableViewSelectionDidChange を発火しないため、items が空になったケースなどで
         // プレビューが前の内容を残してしまわないよう、ここで明示的に更新する。
         updatePreview()
