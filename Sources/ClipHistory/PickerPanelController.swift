@@ -18,7 +18,7 @@ final class PickerPanelController: NSObject {
         self.historyStore = historyStore
         let contentRect = NSRect(origin: .zero, size: Self.panelSize)
         panel = PickerPanel(contentRect: contentRect)
-        pickerViewController = PickerViewController(resultsProvider: resultsProvider, settings: settings)
+        pickerViewController = PickerViewController(resultsProvider: resultsProvider, settings: settings, historyStore: historyStore)
         super.init()
 
         panel.contentViewController = pickerViewController
