@@ -272,11 +272,28 @@ fzf と同じ手法を採る。
 | --- | --- |
 | 種別 | `NSPanel`（`.nonactivatingPanel`、ボーダーレス、`level = .floating`） |
 | 位置 | アクティブなスクリーンの中央上寄り。幅 720pt 程度 |
-| 構成 | 上部に検索フィールド（`NSSearchField`）、下部に結果一覧（`NSTableView`） |
+| 構成 | 上部に検索フィールド（`NSSearchField`）。下部は左右分割し、左に結果一覧（`NSTableView`、55%）、右にプレビューペイン（45%）を配置する。中央の間隔は 12pt。比率は `NSLayoutConstraint` の multiplier で表現し、`NSSplitView` は使わない |
 | 行の表示 | プレビュー本文（1〜2 行）、コピー元アプリ名、相対時刻 |
+| プレビュー | 読み取り専用の `NSTextView`（`NSScrollView` 内、`NSBox` で枠を描く）。フォントは等幅。一覧行が改行・連続空白を半角スペース1個に畳んだ1行表示（`DisplayText.singleLine`）なのに対し、プレビューは改行をそのまま描画する |
 | 描画 | `NSTableView` のセル再利用による遅延描画。全件をメモリ展開しない |
 | 背景 | 不透明（`windowBackgroundColor`）の角丸ビューで描く。半透明にはしない。`contentViewController` の代入で `contentView` が置き換わるため、背景はパネルではなくルートビュー側（`PanelBackgroundView`）が描く |
-| 本文の読み出し | 一覧は `preview_text` のみを使用。実データは選択確定時に `representations` から読む |
+| 本文の読み出し | 一覧は `preview_text` のみを使用。プレビューと選択確定時は `representations` から読む。プレビューは `HistoryStore.loadPreviewText(itemID:maxCharacters:)` で `public.utf8-plain-text` の実データを上限 4,000 文字まで読み直す（`preview_text` は一覧用に先頭 200 文字で打ち切っているためプレビューの用途を満たせない）。テキスト表現が無い場合は `preview_text` をフォールバック表示する |
+
+**左右分割にした理由**
+
+パネルの高さが限られており、上下に分割すると結果一覧の可視行数が半減し選択操作がしづらくなる。そのため左右分割とし、一覧の可視行数を確保した。
+
+**一覧とプレビューの役割の違い**
+
+一覧行は改行・連続空白を半角スペース1個に畳んで1行で表示し、多数の候補を一目で見比べられるようにする。プレビューは改行をそのまま描画し、コピーしたコードや設定ファイルのインデント・桁位置を崩さない。
+
+**更新契機**
+
+プレビューは `NSTableViewDelegate.tableViewSelectionDidChange`、および結果の再読み込み後に更新する。`selectRowIndexes` は選択が実際に変わらない場合に通知を発火しないため、再読み込み後は明示的に更新する。
+
+**画像対応との関係**
+
+現時点ではプレビューはテキストのみ（§11 のフェーズ5「画像・ファイル対応」は将来）。将来の画像プレビューも同じ `representations` 経由で読む想定であり、`loadPreviewText` がその継ぎ目になる。
 
 ### 7.2 キー操作
 
