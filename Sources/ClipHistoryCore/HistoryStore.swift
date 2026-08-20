@@ -248,6 +248,24 @@ public final class HistoryStore {
         return text
     }
 
+    /// nvim での編集など、本文全体が必要な用途に使う。`loadPreviewText` は表示用に文字数で
+    /// 切り詰めるため書き戻しには使えない。こちらは切り詰めを一切行わない。
+    ///
+    /// - Parameter itemID: 対象の item id
+    /// - Returns: `public.utf8-plain-text` の表現が無い場合、または UTF-8 として解釈できない
+    ///   場合は `nil`。
+    public func loadFullText(itemID: Int64) throws -> String? {
+        let representations = try fetchRepresentations(itemID: itemID)
+        guard let textRepresentation = representations.first(where: { $0.uti == "public.utf8-plain-text" }) else {
+            return nil
+        }
+        let data = try loadData(for: textRepresentation)
+        guard let text = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        return text
+    }
+
     /// プレビューペインに画像を表示するために使う。`loadPreviewText` と対になるメソッド。
     ///
     /// `representations` の並び順ではなく `PasteboardImageType.orderedUTIs` の優先順に従い、
