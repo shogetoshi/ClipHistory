@@ -97,6 +97,7 @@ public final class ClipboardMonitor {
             if data.count > settings.maxTextBytes { return }
 
             let hash = sha256Hex(data)
+            if isSameAsLatest(hash: hash) { return }
             let searchKey = Normalizer.normalize(text)
             let previewText = String(text.prefix(200))
 
@@ -130,6 +131,7 @@ public final class ClipboardMonitor {
         if data.count > settings.maxImageBytes { return }
 
         let hash = sha256Hex(data)
+        if isSameAsLatest(hash: hash) { return }
         let previewText = imagePreviewText(uti: uti, data: data)
         let searchKey = Normalizer.normalize(previewText)
 
@@ -150,6 +152,21 @@ public final class ClipboardMonitor {
         )
 
         insert(newItem, searchKey: searchKey)
+    }
+
+    /// 直前（最新）のレコードと同一内容かどうかを判定する。
+    /// 連続する同一内容のみを対象とし、過去データとの重複は許容する（設計書 4.4）。
+    /// メモリ上に前回ハッシュをキャッシュせず、毎回 `HistoryStore` に問い合わせる。
+    /// 再起動後や「履歴を全消去」後に古い状態が残って登録が誤って抑制されるのを避けるためであり、
+    /// コピー操作1回あたり `idx_items_created_at` を使う1クエリだけなのでコストは無視できる。
+    private func isSameAsLatest(hash: String) -> Bool {
+        do {
+            return try historyStore.latestContentHash() == hash
+        } catch {
+            // DB読み出しに失敗しても登録自体は止めない（同一ではないとみなす）
+            NSLog("ClipHistory: failed to read latest content hash: \(error)")
+            return false
+        }
     }
 
     /// 一覧行に表示する説明テキストを組み立てる。フォーマット名と、取得できればピクセルサイズを付す。
