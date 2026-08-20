@@ -29,15 +29,34 @@ final class PickerPanel: NSPanel {
         isReleasedWhenClosed = false
         hasShadow = true
 
-        // 角丸・半透明の背景。凝ったデザインは不要なため NSVisualEffectView 一枚で軽く整える。
-        let effectView = NSVisualEffectView(frame: contentRect)
-        effectView.autoresizingMask = [.width, .height]
-        effectView.material = .hudWindow
-        effectView.blendingMode = .behindWindow
-        effectView.state = .active
-        effectView.wantsLayer = true
-        effectView.layer?.cornerRadius = 12
-        effectView.layer?.masksToBounds = true
-        contentView = effectView
+        // 角丸背景は contentViewController のルートビュー（PanelBackgroundView）側で描く。
+        // ここで contentView に背景ビューを設定しても contentViewController の代入時に
+        // 丸ごと置き換えられてしまうため。
+    }
+}
+
+/// パネルの不透明な角丸背景を描くビュー（`PickerViewController.loadView()` のルートビューとして使う）。
+final class PanelBackgroundView: NSView {
+    override var wantsUpdateLayer: Bool { true }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = 12
+        layer?.masksToBounds = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override func updateLayer() {
+        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
     }
 }
