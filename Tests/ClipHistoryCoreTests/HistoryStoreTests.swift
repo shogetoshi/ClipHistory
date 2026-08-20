@@ -249,4 +249,37 @@ struct HistoryStoreTests {
             try blobStore.load(relativePath: path1)
         }
     }
+
+    @Test("loadPreviewText: 改行を含むテキストを改行込みで取得できる")
+    func loadPreviewTextKeepsNewlines() throws {
+        let (store, tempDir) = try makeHistoryStore()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let text = "line1\nline2\nline3"
+        let id = try store.insert(makeTextItem(text, createdAt: 1_000))
+
+        let preview = try store.loadPreviewText(itemID: id, maxCharacters: 200)
+        #expect(preview == text)
+    }
+
+    @Test("loadPreviewText: maxCharactersを超えるテキストは切り詰められる")
+    func loadPreviewTextTruncatesToMaxCharacters() throws {
+        let (store, tempDir) = try makeHistoryStore()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let text = String(repeating: "a", count: 300)
+        let id = try store.insert(makeTextItem(text, createdAt: 1_000))
+
+        let preview = try store.loadPreviewText(itemID: id, maxCharacters: 100)
+        #expect(preview == String(repeating: "a", count: 100))
+    }
+
+    @Test("loadPreviewText: 存在しないitemIDではnilが返る")
+    func loadPreviewTextReturnsNilForMissingItem() throws {
+        let (store, tempDir) = try makeHistoryStore()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let preview = try store.loadPreviewText(itemID: 9_999, maxCharacters: 200)
+        #expect(preview == nil)
+    }
 }
