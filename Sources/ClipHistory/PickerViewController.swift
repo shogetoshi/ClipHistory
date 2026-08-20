@@ -123,20 +123,20 @@ final class PickerViewController: NSViewController {
         root.addSubview(previewBox)
 
         NSLayoutConstraint.activate([
-            searchField.topAnchor.constraint(equalTo: root.topAnchor, constant: 16),
+            searchField.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -16),
             searchField.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16),
             searchField.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -16),
             searchField.heightAnchor.constraint(equalToConstant: 28),
 
-            scrollView.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 12),
+            scrollView.topAnchor.constraint(equalTo: root.topAnchor, constant: 16),
             scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16),
-            scrollView.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -16),
+            scrollView.bottomAnchor.constraint(equalTo: searchField.topAnchor, constant: -12),
 
             // 一覧55% / プレビュー45%。中央に12ptの間隔を空け、比率は multiplier で表現する。
-            previewBox.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 12),
+            previewBox.topAnchor.constraint(equalTo: root.topAnchor, constant: 16),
             previewBox.leadingAnchor.constraint(equalTo: scrollView.trailingAnchor, constant: 12),
             previewBox.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -16),
-            previewBox.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -16),
+            previewBox.bottomAnchor.constraint(equalTo: searchField.topAnchor, constant: -12),
             previewBox.widthAnchor.constraint(equalTo: scrollView.widthAnchor, multiplier: 45.0 / 55.0),
 
             previewScrollView.topAnchor.constraint(equalTo: previewBox.topAnchor, constant: 1),
