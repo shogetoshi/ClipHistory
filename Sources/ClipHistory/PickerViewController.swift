@@ -44,7 +44,7 @@ final class PickerViewController: NSViewController {
     }
 
     override func loadView() {
-        let root = NSView(frame: NSRect(x: 0, y: 0, width: 720, height: 420))
+        let root = PanelBackgroundView(frame: NSRect(x: 0, y: 0, width: 720, height: 420))
         root.autoresizingMask = [.width, .height]
 
         searchField.translatesAutoresizingMaskIntoConstraints = false
