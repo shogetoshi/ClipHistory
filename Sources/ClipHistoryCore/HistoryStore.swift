@@ -205,6 +205,34 @@ public final class HistoryStore {
         return try blobStore.load(relativePath: path)
     }
 
+    /// プレビュー表示用にテキスト表現の実データを読み出す。
+    ///
+    /// `items.preview_text`（一覧行用に先頭200文字だけ持たせたもの）ではなく、こちらは
+    /// `representations` から実データを読み直す。プレビュー画面では改行を含めた実際の内容を
+    /// そのまま見せたいためで、`preview_text` はその用途には使えない。将来追加する画像の
+    /// プレビューも同じ `representations` 経由で読み出すことになるため、このメソッドがその
+    /// 継ぎ目になる。
+    ///
+    /// - Parameters:
+    ///   - itemID: 対象の item id
+    ///   - maxCharacters: 返す文字列の最大文字数。超えた場合は先頭からこの文字数に切り詰める。
+    /// - Returns: `public.utf8-plain-text` の表現が無い場合、または UTF-8 として解釈できない
+    ///   場合は `nil`。改行・タブ・空白などは一切加工しない。
+    public func loadPreviewText(itemID: Int64, maxCharacters: Int) throws -> String? {
+        let representations = try fetchRepresentations(itemID: itemID)
+        guard let textRepresentation = representations.first(where: { $0.uti == "public.utf8-plain-text" }) else {
+            return nil
+        }
+        let data = try loadData(for: textRepresentation)
+        guard let text = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        if text.count > maxCharacters {
+            return String(text.prefix(maxCharacters))
+        }
+        return text
+    }
+
     /// 指定した id 群の items を取得する。`SearchIndex.search()` が返した id 列を実データに
     /// 解決するために使う（`SearchResultsProvider` の責務）。
     ///
