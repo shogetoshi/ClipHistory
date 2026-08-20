@@ -275,6 +275,7 @@ fzf と同じ手法を採る。
 | 構成 | 上部に検索フィールド（`NSSearchField`）、下部に結果一覧（`NSTableView`） |
 | 行の表示 | プレビュー本文（1〜2 行）、コピー元アプリ名、相対時刻 |
 | 描画 | `NSTableView` のセル再利用による遅延描画。全件をメモリ展開しない |
+| 背景 | 不透明（`windowBackgroundColor`）の角丸ビューで描く。半透明にはしない。`contentViewController` の代入で `contentView` が置き換わるため、背景はパネルではなくルートビュー側（`PanelBackgroundView`）が描く |
 | 本文の読み出し | 一覧は `preview_text` のみを使用。実データは選択確定時に `representations` から読む |
 
 ### 7.2 キー操作
