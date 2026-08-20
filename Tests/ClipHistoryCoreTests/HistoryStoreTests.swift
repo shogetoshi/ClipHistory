@@ -58,6 +58,20 @@ private func makeTextItem(_ text: String, createdAt: Int64) -> HistoryStore.NewI
     )
 }
 
+private func makeImageItem(uti: String, data: Data, createdAt: Int64) -> HistoryStore.NewItem {
+    let previewText = "[画像] PNG 2×2"
+    return HistoryStore.NewItem(
+        createdAt: createdAt,
+        kind: .image,
+        previewText: previewText,
+        searchKey: Normalizer.normalize(previewText),
+        contentHash: sha256Hex(data),
+        sourceAppBundleID: "com.example.app",
+        sourceAppName: "ExampleApp",
+        representations: [HistoryStore.NewRepresentation(uti: uti, data: data)]
+    )
+}
+
 @Suite("HistoryStore")
 struct HistoryStoreTests {
     @Test("挿入したレコードを最新順で取得でき、表現も取得できる")
@@ -281,5 +295,57 @@ struct HistoryStoreTests {
 
         let preview = try store.loadPreviewText(itemID: 9_999, maxCharacters: 200)
         #expect(preview == nil)
+    }
+
+    @Test("loadPreviewImageData: 画像アイテムからutiとデータを取得できる")
+    func loadPreviewImageDataReturnsImageRepresentation() throws {
+        let (store, tempDir) = try makeHistoryStore()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let data = Data([0x89, 0x50, 0x4E, 0x47])
+        let id = try store.insert(makeImageItem(uti: "public.png", data: data, createdAt: 1_000))
+
+        let result = try store.loadPreviewImageData(itemID: id)
+        #expect(result?.uti == "public.png")
+        #expect(result?.data == data)
+    }
+
+    @Test("loadPreviewImageData: テキストのみのアイテムではnilが返る")
+    func loadPreviewImageDataReturnsNilForTextOnlyItem() throws {
+        let (store, tempDir) = try makeHistoryStore()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let id = try store.insert(makeTextItem("hello", createdAt: 1_000))
+
+        let result = try store.loadPreviewImageData(itemID: id)
+        #expect(result == nil)
+    }
+
+    @Test("loadPreviewImageData: 複数の画像表現がある場合はorderedUTIsの優先順で返る")
+    func loadPreviewImageDataPrefersOrderedUTIs() throws {
+        let (store, tempDir) = try makeHistoryStore()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let tiffData = Data([0x4D, 0x4D, 0x00, 0x2A])
+        let pngData = Data([0x89, 0x50, 0x4E, 0x47])
+        let previewText = "[画像] PNG 2×2"
+        let item = HistoryStore.NewItem(
+            createdAt: 1_000,
+            kind: .image,
+            previewText: previewText,
+            searchKey: Normalizer.normalize(previewText),
+            contentHash: sha256Hex(pngData),
+            sourceAppBundleID: "com.example.app",
+            sourceAppName: "ExampleApp",
+            representations: [
+                HistoryStore.NewRepresentation(uti: "public.tiff", data: tiffData),
+                HistoryStore.NewRepresentation(uti: "public.png", data: pngData)
+            ]
+        )
+        let id = try store.insert(item)
+
+        let result = try store.loadPreviewImageData(itemID: id)
+        #expect(result?.uti == "public.png")
+        #expect(result?.data == pngData)
     }
 }

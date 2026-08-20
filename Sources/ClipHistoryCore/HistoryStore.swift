@@ -233,6 +233,29 @@ public final class HistoryStore {
         return text
     }
 
+    /// プレビューペインに画像を表示するために使う。`loadPreviewText` と対になるメソッド。
+    ///
+    /// `representations` の並び順ではなく `PasteboardImageType.orderedUTIs` の優先順に従い、
+    /// 最初に見つかった画像表現の実データを読み出す。テキストと違って切り詰めはせず実データ
+    /// 全体を返す（画像は途中まででは表示できないため）。
+    ///
+    /// - Parameter itemID: 対象の item id
+    /// - Returns: 画像表現が無い場合、または読み出したデータが空の場合は `nil`。
+    public func loadPreviewImageData(itemID: Int64) throws -> (uti: String, data: Data)? {
+        let representations = try fetchRepresentations(itemID: itemID)
+        for uti in PasteboardImageType.orderedUTIs {
+            guard let representation = representations.first(where: { $0.uti == uti }) else {
+                continue
+            }
+            let data = try loadData(for: representation)
+            if data.isEmpty {
+                return nil
+            }
+            return (uti: uti, data: data)
+        }
+        return nil
+    }
+
     /// 指定した id 群の items を取得する。`SearchIndex.search()` が返した id 列を実データに
     /// 解決するために使う（`SearchResultsProvider` の責務）。
     ///
