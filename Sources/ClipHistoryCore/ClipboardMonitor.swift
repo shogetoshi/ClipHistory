@@ -165,12 +165,12 @@ public final class ClipboardMonitor {
         // Retina スクリーンショットでは NSImage.size（pt）が実寸と食い違うため、
         // NSBitmapImageRep のピクセルサイズを優先して使う。
         if let bitmap = NSBitmapImageRep(data: data) {
-            return "[画像] \(formatName) \(bitmap.pixelsWide)×\(bitmap.pixelsHigh)"
+            return "[Image] \(formatName) \(bitmap.pixelsWide)×\(bitmap.pixelsHigh)"
         }
         if let image = NSImage(data: data) {
-            return "[画像] \(formatName) \(Int(image.size.width))×\(Int(image.size.height))"
+            return "[Image] \(formatName) \(Int(image.size.width))×\(Int(image.size.height))"
         }
-        return "[画像] \(formatName)"
+        return "[Image] \(formatName)"
     }
 
     /// `HistoryStore` への挿入と `onInsert` 通知、エラー時のログ出力をテキスト・画像で共通化する。

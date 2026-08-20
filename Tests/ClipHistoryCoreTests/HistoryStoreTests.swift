@@ -59,7 +59,7 @@ private func makeTextItem(_ text: String, createdAt: Int64) -> HistoryStore.NewI
 }
 
 private func makeImageItem(uti: String, data: Data, createdAt: Int64) -> HistoryStore.NewItem {
-    let previewText = "[画像] PNG 2×2"
+    let previewText = "[Image] PNG 2×2"
     return HistoryStore.NewItem(
         createdAt: createdAt,
         kind: .image,
@@ -328,7 +328,7 @@ struct HistoryStoreTests {
 
         let tiffData = Data([0x4D, 0x4D, 0x00, 0x2A])
         let pngData = Data([0x89, 0x50, 0x4E, 0x47])
-        let previewText = "[画像] PNG 2×2"
+        let previewText = "[Image] PNG 2×2"
         let item = HistoryStore.NewItem(
             createdAt: 1_000,
             kind: .image,
