@@ -87,40 +87,97 @@ public final class ClipboardMonitor {
             return
         }
 
-        // v1のこのフェーズで扱う型は public.utf8-plain-text のみ
-        guard let text = pasteboard.string(forType: .string) else { return }
+        // テキスト優先: リッチテキストのコピーはテキストと画像表現を同時に持つことがあり、
+        // その場合はテキストとして扱いたいため、使えるテキストがあれば画像判定より先に処理する。
+        if let text = pasteboard.string(forType: .string),
+           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let data = Data(text.utf8)
 
-        // 空、または空白文字のみはスキップ
-        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return }
+            // 過大なテキストはスキップ（設定可能、既定5MB）
+            if data.count > settings.maxTextBytes { return }
 
-        let data = Data(text.utf8)
+            let hash = sha256Hex(data)
+            let searchKey = Normalizer.normalize(text)
+            let previewText = String(text.prefix(200))
 
-        // 過大なテキストはスキップ（設定可能、既定5MB）
-        if data.count > settings.maxTextBytes { return }
+            // コピー元アプリは検出時点の frontmostApplication（近似値。設計書 5.2）
+            let frontApp = NSWorkspace.shared.frontmostApplication
+
+            let newItem = HistoryStore.NewItem(
+                createdAt: Int64(Date().timeIntervalSince1970 * 1000),
+                kind: .text,
+                previewText: previewText,
+                searchKey: searchKey,
+                contentHash: hash,
+                sourceAppBundleID: frontApp?.bundleIdentifier,
+                sourceAppName: frontApp?.localizedName,
+                representations: [
+                    HistoryStore.NewRepresentation(uti: "public.utf8-plain-text", data: data)
+                ]
+            )
+
+            insert(newItem, searchKey: searchKey)
+            return
+        }
+
+        // テキストが使えない場合に限り、画像として取り込む
+        guard let (uti, data) = PasteboardImageType.orderedUTIs.lazy.compactMap({ uti -> (String, Data)? in
+            guard let data = self.pasteboard.data(forType: NSPasteboard.PasteboardType(uti)), !data.isEmpty else { return nil }
+            return (uti, data)
+        }).first else { return }
+
+        // 過大な画像はスキップ（設定可能、既定20MB）
+        if data.count > settings.maxImageBytes { return }
 
         let hash = sha256Hex(data)
-        let searchKey = Normalizer.normalize(text)
-        let previewText = String(text.prefix(200))
+        let previewText = imagePreviewText(uti: uti, data: data)
+        let searchKey = Normalizer.normalize(previewText)
 
         // コピー元アプリは検出時点の frontmostApplication（近似値。設計書 5.2）
         let frontApp = NSWorkspace.shared.frontmostApplication
 
         let newItem = HistoryStore.NewItem(
             createdAt: Int64(Date().timeIntervalSince1970 * 1000),
-            kind: .text,
+            kind: .image,
             previewText: previewText,
             searchKey: searchKey,
             contentHash: hash,
             sourceAppBundleID: frontApp?.bundleIdentifier,
             sourceAppName: frontApp?.localizedName,
             representations: [
-                HistoryStore.NewRepresentation(uti: "public.utf8-plain-text", data: data)
+                HistoryStore.NewRepresentation(uti: uti, data: data)
             ]
         )
 
+        insert(newItem, searchKey: searchKey)
+    }
+
+    /// 一覧行に表示する説明テキストを組み立てる。フォーマット名と、取得できればピクセルサイズを付す。
+    private func imagePreviewText(uti: String, data: Data) -> String {
+        let formatName: String
+        switch uti {
+        case "public.png": formatName = "PNG"
+        case "public.jpeg": formatName = "JPEG"
+        case "public.tiff": formatName = "TIFF"
+        default: formatName = uti
+        }
+
+        // Retina スクリーンショットでは NSImage.size（pt）が実寸と食い違うため、
+        // NSBitmapImageRep のピクセルサイズを優先して使う。
+        if let bitmap = NSBitmapImageRep(data: data) {
+            return "[Image] \(formatName) \(bitmap.pixelsWide)×\(bitmap.pixelsHigh)"
+        }
+        if let image = NSImage(data: data) {
+            return "[Image] \(formatName) \(Int(image.size.width))×\(Int(image.size.height))"
+        }
+        return "[Image] \(formatName)"
+    }
+
+    /// `HistoryStore` への挿入と `onInsert` 通知、エラー時のログ出力をテキスト・画像で共通化する。
+    private func insert(_ item: HistoryStore.NewItem, searchKey: String) {
         do {
-            let itemID = try historyStore.insert(newItem)
-            onInsert?(IndexEntry(id: itemID, createdAt: newItem.createdAt, searchKey: searchKey))
+            let itemID = try historyStore.insert(item)
+            onInsert?(IndexEntry(id: itemID, createdAt: item.createdAt, searchKey: searchKey))
         } catch {
             // DB書き込みに失敗しても監視ループ自体は継続する
             NSLog("ClipHistory: failed to insert history item: \(error)")

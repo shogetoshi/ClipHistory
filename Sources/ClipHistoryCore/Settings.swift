@@ -30,6 +30,7 @@ public final class Settings {
         case hotKeyKeyCode
         case hotKeyModifiers
         case maxTextBytes
+        case maxImageBytes
         case resultLimit
         case inlineBlobThreshold
         case skipConcealed
@@ -43,6 +44,7 @@ public final class Settings {
             Key.hotKeyKeyCode.rawValue: 9,       // kVK_ANSI_V
             Key.hotKeyModifiers.rawValue: 0x0900, // optionKey | cmdKey
             Key.maxTextBytes.rawValue: 5 * 1024 * 1024,
+            Key.maxImageBytes.rawValue: 20 * 1024 * 1024,
             Key.resultLimit.rawValue: 200,
             Key.inlineBlobThreshold.rawValue: 64 * 1024,
             Key.skipConcealed.rawValue: true
@@ -79,6 +81,13 @@ public final class Settings {
     public var maxTextBytes: Int {
         get { defaults.integer(forKey: Key.maxTextBytes.rawValue) }
         set { defaults.set(newValue, forKey: Key.maxTextBytes.rawValue) }
+    }
+
+    /// これを超える画像は保存しない（既定 20MB）。テキストとは別の上限を持たせるのは、
+    /// スクリーンショットなどの画像はテキストより桁が大きいため。
+    public var maxImageBytes: Int {
+        get { defaults.integer(forKey: Key.maxImageBytes.rawValue) }
+        set { defaults.set(newValue, forKey: Key.maxImageBytes.rawValue) }
     }
 
     /// 一覧に表示する最大件数（既定 200）
