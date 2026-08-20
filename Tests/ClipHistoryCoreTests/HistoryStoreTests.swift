@@ -125,6 +125,19 @@ struct HistoryStoreTests {
         #expect(entries.map(\.searchKey).contains("world"))
     }
 
+    @Test("latestContentHash: itemsが空ならnil、挿入後は最新のcontentHashが返る")
+    func latestContentHash() throws {
+        let (store, tempDir) = try makeHistoryStore()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        #expect(try store.latestContentHash() == nil)
+
+        _ = try store.insert(makeTextItem("first", createdAt: 1_000))
+        _ = try store.insert(makeTextItem("second", createdAt: 2_000))
+
+        #expect(try store.latestContentHash() == sha256Hex(Data("second".utf8)))
+    }
+
     @Test("閾値超のデータは外部ファイルとして保存される")
     func largeDataIsStoredExternally() throws {
         let (store, tempDir) = try makeHistoryStore(inlineBlobThreshold: 16)

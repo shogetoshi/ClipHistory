@@ -171,6 +171,21 @@ public final class HistoryStore {
         return results
     }
 
+    /// 最新1件の `content_hash` を取得する。
+    ///
+    /// 直前のコピーと同一内容かを判定するために使う（連続重複の登録回避）。
+    /// `ORDER BY created_at DESC, id DESC` は `fetchRecent` と同じ理由で id をタイブレーカにしている。
+    public func latestContentHash() throws -> String? {
+        let stmt = try db.prepare("""
+        SELECT content_hash FROM items ORDER BY created_at DESC, id DESC LIMIT 1;
+        """)
+
+        if try stmt.step() {
+            return stmt.columnText(0)
+        }
+        return nil
+    }
+
     /// 指定した item に紐づく全表現を取得する
     public func fetchRepresentations(itemID: Int64) throws -> [Representation] {
         let stmt = try db.prepare("""
