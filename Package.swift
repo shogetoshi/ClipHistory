@@ -6,6 +6,11 @@ let package = Package(
     platforms: [
         .macOS(.v13)
     ],
+    dependencies: [
+        // パネル内に nvim を埋め込むためのターミナルエミュレータ。
+        // Issue 0006 でこれのみ外部依存として追加した。
+        .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", .upToNextMajor(from: "1.20.0"))
+    ],
     targets: [
         // AppKit を含む非UIロジック（設定・DB・BLOB管理・履歴ストア・正規化・クリップボード監視）。
         // ユニットテストはこのターゲットのうち AppKit に依存しない部分のみを対象にする。
@@ -23,7 +28,8 @@ let package = Package(
         .executableTarget(
             name: "ClipHistory",
             dependencies: [
-                "ClipHistoryCore"
+                "ClipHistoryCore",
+                .product(name: "SwiftTerm", package: "SwiftTerm")
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v5)

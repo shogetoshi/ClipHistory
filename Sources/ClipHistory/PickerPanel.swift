@@ -39,6 +39,11 @@ final class PickerPanel: NSPanel {
 final class PanelBackgroundView: NSView {
     override var wantsUpdateLayer: Bool { true }
 
+    /// ⌘系のキー等価をビュー階層の探索より先に横取りするためのフック。
+    /// 編集モードの ⌘E / ⌘↩ / ⌘. を、検索フィールドやターミナルにフォーカスがある状態でも
+    /// 確実に受け取るために使う（Issue 0006）。
+    var keyEquivalentHandler: ((NSEvent) -> Bool)?
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
@@ -53,6 +58,11 @@ final class PanelBackgroundView: NSView {
 
     override func updateLayer() {
         layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if keyEquivalentHandler?(event) == true { return true }
+        return super.performKeyEquivalent(with: event)
     }
 
     override func viewDidChangeEffectiveAppearance() {

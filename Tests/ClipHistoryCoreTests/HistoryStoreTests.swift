@@ -310,6 +310,46 @@ struct HistoryStoreTests {
         #expect(preview == nil)
     }
 
+    @Test("loadFullText: maxCharactersを超える長さでも切り詰められずに全文が返る")
+    func loadFullTextReturnsUntruncatedText() throws {
+        let (store, tempDir) = try makeHistoryStore()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let text = String(repeating: "a", count: 5_000)
+        let id = try store.insert(makeTextItem(text, createdAt: 1_000))
+
+        let fullText = try store.loadFullText(itemID: id)
+        #expect(fullText == text)
+
+        // 対比: loadPreviewText は maxCharacters で切り詰められる
+        let preview = try store.loadPreviewText(itemID: id, maxCharacters: 4_000)
+        #expect(preview == String(repeating: "a", count: 4_000))
+    }
+
+    @Test("loadFullText: public.utf8-plain-text表現が無いitemではnilが返る")
+    func loadFullTextReturnsNilWhenNoTextRepresentation() throws {
+        let (store, tempDir) = try makeHistoryStore()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let data = Data([0x89, 0x50, 0x4E, 0x47])
+        let id = try store.insert(makeImageItem(uti: "public.png", data: data, createdAt: 1_000))
+
+        let fullText = try store.loadFullText(itemID: id)
+        #expect(fullText == nil)
+    }
+
+    @Test("loadFullText: 改行を含むテキストが加工されずそのまま返る")
+    func loadFullTextKeepsNewlines() throws {
+        let (store, tempDir) = try makeHistoryStore()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let text = "line1\nline2\nline3"
+        let id = try store.insert(makeTextItem(text, createdAt: 1_000))
+
+        let fullText = try store.loadFullText(itemID: id)
+        #expect(fullText == text)
+    }
+
     @Test("loadPreviewImageData: 画像アイテムからutiとデータを取得できる")
     func loadPreviewImageDataReturnsImageRepresentation() throws {
         let (store, tempDir) = try makeHistoryStore()
