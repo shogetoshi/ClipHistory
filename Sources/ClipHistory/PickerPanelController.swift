@@ -30,6 +30,9 @@ final class PickerPanelController: NSObject {
         pickerViewController.onCancel = { [weak self] in
             self?.hide(restoringFocus: true)
         }
+        pickerViewController.onCommitEditedText = { [weak self] text in
+            self?.commitEditedText(text)
+        }
     }
 
     /// ホットキーから呼ばれる表示/非表示のトグル（設計書 7.2）。
@@ -84,6 +87,24 @@ final class PickerPanelController: NSObject {
         restoreFocus()
     }
 
+    /// nvim で編集したテキストを `NSPasteboard` へ書き戻す（Issue 0006）。
+    ///
+    /// 元項目が RTF などの他表現を持っていても、プレーンテキストを編集した時点で
+    /// 他表現は編集内容と整合しなくなるため、`public.utf8-plain-text` の1表現だけを書き戻す。
+    /// `commit(_:)` と同様、書き戻しは `markOwnWrite()` を呼ばず、`ClipboardMonitor` に
+    /// 通常の変更検知として拾われ履歴の最新に追加されるのは意図どおりである。
+    private func commitEditedText(_ text: String) {
+        guard let data = text.data(using: .utf8) else {
+            NSLog("ClipHistory: failed to write pasteboard: could not encode edited text as UTF-8")
+            return
+        }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setData(data, forType: NSPasteboard.PasteboardType("public.utf8-plain-text"))
+        panel.orderOut(nil)
+        restoreFocus()
+    }
+
     /// 保持していた元アプリを復帰させる（設計書 7.3 手順3）。復帰後、利用者はそのまま ⌘V する。
     private func restoreFocus() {
         previousFrontmostApp?.activate()
@@ -130,6 +151,9 @@ extension PickerPanelController: NSWindowDelegate {
     /// パネルがフォーカスを失ったら自動的に閉じる（設計書 7.2）。
     /// この経路ではユーザーが自分で別アプリへフォーカスを移しているため、元アプリへの復帰は行わない。
     func windowDidResignKey(_ notification: Notification) {
+        // nvim 編集モード中に閉じると編集内容が失われるため、この経路では閉じない（Issue 0006）。
+        // 編集の終了（⌘↩ 確定 / ⌘. 破棄）は PickerViewController 側のキー操作で明示的に行う。
+        guard !pickerViewController.isEditingInNvim else { return }
         hide(restoringFocus: false)
     }
 }
