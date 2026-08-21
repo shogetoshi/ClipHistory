@@ -323,6 +323,17 @@ final class PickerViewController: NSViewController {
         commitSelection()
     }
 
+    /// Esc キーの押下はレスポンダチェーンを通じて `cancelOperation(_:)` として
+    /// 送られてくるため、`NSViewController`（`NSResponder` のサブクラス）である
+    /// ここで受けることで、検索フィールド・プレビューの `NSTextView` など
+    /// フォーカスがどこにあってもパネルを閉じられるようにする（Issue 0009）。
+    /// nvim 編集モード中は Esc をノーマルモード復帰等のため nvim 自身に使わせる必要が
+    /// あるので、ここでは何もせずレスポンダチェーンより先で処理される nvim 側に委ねる。
+    override func cancelOperation(_ sender: Any?) {
+        guard !isEditingInNvim else { return }
+        onCancel?()
+    }
+
     /// ⌘系のキー等価を、ビュー階層の探索より先に横取りして処理する（Issue 0006）。
     /// `PanelBackgroundView.keyEquivalentHandler` から呼ばれる。
     /// 修飾キーが `.command` のみの押下だけを対象にする（⌘⇧E 等の意図しない組み合わせを
@@ -555,6 +566,9 @@ extension PickerViewController: NSSearchFieldDelegate {
     /// 効くよう、ここでハンドリングする（設計書 7.2）。
     /// ⌃P/⌃N は NSTextView 標準のキーバインディング（DefaultKeyBinding.dict）により
     /// 内部で moveUp:/moveDown: に変換されて渡ってくるため、矢印キーと同じ分岐で扱える。
+    /// なお Esc（cancelOperation:）は検索フィールドにフォーカスがある場合はここで即座に
+    /// 処理されるが、`PickerViewController.cancelOperation(_:)` のオーバーライドにより
+    /// フォーカスがどこにあっても効くようになっている（Issue 0009）。
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         switch commandSelector {
         case #selector(NSResponder.moveUp(_:)):
