@@ -69,11 +69,7 @@ public final class SearchIndex {
     }
 
     /// クエリに対する検索結果を、マッチしたitem idのスコア降順（同点はcreatedAt降順→id降順）で返す。
-    ///
-    /// - Parameters:
-    ///   - isCancelled: 走査ループの途中で定期的に評価するキャンセル判定。将来の非同期化に
-    ///     備えて用意するフックであり、このフェーズでは呼び出し側は渡さない（指揮官判断）。
-    public func search(query: String, limit: Int, isCancelled: (() -> Bool)? = nil) -> [Int64] {
+    public func search(query: String, limit: Int) -> [Int64] {
         let normalizedQuery = Normalizer.normalize(query)
         let terms = tokenize(normalizedQuery)
 
@@ -105,8 +101,7 @@ public final class SearchIndex {
         var scored: [(id: Int64, createdAt: Int64, score: Int)] = []
         scored.reserveCapacity(candidates.count)
 
-        for (index, entry) in candidates.enumerated() {
-            if index % 512 == 0, let isCancelled, isCancelled() { break }
+        for entry in candidates {
             if let total = totalScore(entry: entry, terms: terms) {
                 scored.append((entry.id, entry.createdAt, total))
             }

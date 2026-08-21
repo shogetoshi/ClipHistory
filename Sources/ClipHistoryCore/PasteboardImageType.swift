@@ -5,7 +5,4 @@ import Foundation
 /// （プレビュー用の読み出し時）の双方がこの定義を参照する。
 public enum PasteboardImageType {
     public static let orderedUTIs: [String] = ["public.png", "public.jpeg", "public.tiff"]
-
-    /// 指定UTIが画像として扱う対象かどうか
-    public static func isImage(_ uti: String) -> Bool { orderedUTIs.contains(uti) }
 }

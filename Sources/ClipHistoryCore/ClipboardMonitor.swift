@@ -25,13 +25,6 @@ public final class ClipboardMonitor {
     /// DBを再読み込みせずにインメモリ検索インデックスへ追記できるようにする（設計書6.1）。
     public var onInsert: ((IndexEntry) -> Void)?
 
-    /// 自アプリがクリップボードへ書き込んだ直後の changeCount。
-    /// 次回ポーリングでこの値と一致した場合のみ、その1回に限り検出をスキップする
-    /// （設計書 5.1「自アプリ由来の即時再検出」）。
-    /// 注意: フェーズ2以降のパネル選択確定時の書き戻しは、この仕組みでは抑制しない
-    /// （選択によるクリップボード書き込みは、新規レコードとして履歴に残るのが仕様のため）。
-    private var suppressedChangeCount: Int?
-
     public init(settings: Settings, historyStore: HistoryStore) {
         self.settings = settings
         self.historyStore = historyStore
@@ -54,21 +47,10 @@ public final class ClipboardMonitor {
         timer = nil
     }
 
-    /// このフェーズでは呼び出し元は存在しないが、フェーズ2以降で自アプリがクリップボードへ
-    /// 書き込む処理（パネルからの通常の書き戻しを除く用途）を実装する際に使う想定のAPI。
-    public func markOwnWrite() {
-        suppressedChangeCount = pasteboard.changeCount
-    }
-
     private func poll() {
         let current = pasteboard.changeCount
         guard current != lastChangeCount else { return }
         lastChangeCount = current
-
-        if let suppressed = suppressedChangeCount, suppressed == current {
-            suppressedChangeCount = nil
-            return
-        }
 
         handleChange()
     }

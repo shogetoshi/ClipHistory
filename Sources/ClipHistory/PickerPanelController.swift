@@ -98,7 +98,7 @@ final class PickerPanelController: NSObject {
     ///
     /// 元項目が RTF などの他表現を持っていても、プレーンテキストを編集した時点で
     /// 他表現は編集内容と整合しなくなるため、`public.utf8-plain-text` の1表現だけを書き戻す。
-    /// `commit(_:)` と同様、書き戻しは `markOwnWrite()` を呼ばず、`ClipboardMonitor` に
+    /// `commit(_:)` と同様、書き戻しは抑制せず、`ClipboardMonitor` に
     /// 通常の変更検知として拾われ履歴の最新に追加されるのは意図どおりである。
     private func commitEditedText(_ text: String) {
         guard let data = text.data(using: .utf8) else {
@@ -123,7 +123,7 @@ final class PickerPanelController: NSObject {
     ///
     /// 書き戻しにより `changeCount` が変化するため、`ClipboardMonitor` が通常の変更検知として
     /// 拾い、新規レコードとして履歴の最新に追加される。これは仕様であり、意図的に
-    /// `markOwnWrite()` は呼ばない（設計書 3.2 手順4）。
+    /// 書き戻しは抑制しない（設計書 3.2 手順4）。
     private func writeToPasteboard(_ item: HistoryItem) throws {
         let representations = try historyStore.fetchRepresentations(itemID: item.id)
         let pasteboard = NSPasteboard.general

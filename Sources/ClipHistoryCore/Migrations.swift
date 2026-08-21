@@ -23,7 +23,6 @@ public enum Migrations {
 
     private static func schemaVersion(_ db: Database) throws -> Int64 {
         let stmt = try db.prepare("SELECT value FROM meta WHERE key = 'schema_version';")
-        defer { try? stmt.reset() }
         guard try stmt.step(), let value = stmt.columnText(0), let version = Int64(value) else {
             return 0
         }

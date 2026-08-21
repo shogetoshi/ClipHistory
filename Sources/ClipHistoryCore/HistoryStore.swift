@@ -1,12 +1,9 @@
 import Foundation
 
-/// `items.kind` の取り得る値。v1 のこのフェーズで実際に生成するのは `.text` のみだが、
-/// スキーマ・API は設計書のとおり多型対応の形にしておく。
+/// `items.kind` の取り得る値。保存対象はプレーンテキストと画像のみ（設計書 13.4）。
 public enum ItemKind: String {
     case text
     case image
-    case file
-    case rtf
 }
 
 /// 1件の履歴（= 1回のコピー）
@@ -152,17 +149,16 @@ public final class HistoryStore {
     }
 
     /// 最新順（created_at DESC）で items を取得する
-    public func fetchRecent(limit: Int, offset: Int = 0) throws -> [HistoryItem] {
+    public func fetchRecent(limit: Int) throws -> [HistoryItem] {
         let stmt = try db.prepare("""
         SELECT id, created_at, kind, preview_text, search_key, content_hash, byte_size,
                source_app_bundle_id, source_app_name, pinned
         FROM items
         -- 同一ミリ秒のコピーが複数あり得るため id をタイブレーカにする（順序の安定＋ページング漏れ防止）
         ORDER BY created_at DESC, id DESC
-        LIMIT ? OFFSET ?;
+        LIMIT ?;
         """)
         try stmt.bind(1, Int64(limit))
-        try stmt.bind(2, Int64(offset))
 
         var results: [HistoryItem] = []
         while try stmt.step() {
