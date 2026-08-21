@@ -163,6 +163,21 @@ final class PickerViewController: NSViewController {
         // 編集モード用の全幅レイアウト。初期状態では使わないため非アクティブのまま保持する。
         previewLeadingFullWidthConstraint = previewBox.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16)
 
+        // contentViewController を持つウィンドウは Auto Layout 上でウィンドウサイズ自体が
+        // 変数になっており、「現在のサイズに留まろうとする」制約の優先度は
+        // NSLayoutPriority.windowSizeStayPut（500）しかない。一方コンテンツ側の
+        // content compression resistance は既定で750と高いため、長いテキストや大きな画像で
+        // 固有サイズが大きくなるとウィンドウがそれに引きずられて拡大してしまう。
+        // これを防ぐため、押し広げの起点となるビューの圧縮抵抗をwindowSizeStayPutより低い
+        // .defaultLowに下げる。あわせて、内容が小さいときにウィンドウを縮める方向へ
+        // 引っ張らないよう content hugging priority も.defaultLowに下げる（Issue 0009）。
+        for view in [scrollView, previewScrollView, previewTextView, previewImageView, previewBox] as [NSView] {
+            view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            view.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+            view.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            view.setContentHuggingPriority(.defaultLow, for: .vertical)
+        }
+
         NSLayoutConstraint.activate([
             searchField.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -16),
             searchField.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16),
@@ -306,6 +321,17 @@ final class PickerViewController: NSViewController {
 
     @objc private func handleDoubleClick() {
         commitSelection()
+    }
+
+    /// Esc キーの押下はレスポンダチェーンを通じて `cancelOperation(_:)` として
+    /// 送られてくるため、`NSViewController`（`NSResponder` のサブクラス）である
+    /// ここで受けることで、検索フィールド・プレビューの `NSTextView` など
+    /// フォーカスがどこにあってもパネルを閉じられるようにする（Issue 0009）。
+    /// nvim 編集モード中は Esc をノーマルモード復帰等のため nvim 自身に使わせる必要が
+    /// あるので、ここでは何もせずレスポンダチェーンより先で処理される nvim 側に委ねる。
+    override func cancelOperation(_ sender: Any?) {
+        guard !isEditingInNvim else { return }
+        onCancel?()
     }
 
     /// ⌘系のキー等価を、ビュー階層の探索より先に横取りして処理する（Issue 0006）。
@@ -540,6 +566,9 @@ extension PickerViewController: NSSearchFieldDelegate {
     /// 効くよう、ここでハンドリングする（設計書 7.2）。
     /// ⌃P/⌃N は NSTextView 標準のキーバインディング（DefaultKeyBinding.dict）により
     /// 内部で moveUp:/moveDown: に変換されて渡ってくるため、矢印キーと同じ分岐で扱える。
+    /// なお Esc（cancelOperation:）は検索フィールドにフォーカスがある場合はここで即座に
+    /// 処理されるが、`PickerViewController.cancelOperation(_:)` のオーバーライドにより
+    /// フォーカスがどこにあっても効くようになっている（Issue 0009）。
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         switch commandSelector {
         case #selector(NSResponder.moveUp(_:)):

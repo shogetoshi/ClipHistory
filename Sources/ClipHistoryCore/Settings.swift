@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 /// 呼び出しホットキーの設定値。キーコード・修飾キーは Carbon の定数体系（HotKeyManager が
 /// 実装されるフェーズ2で `RegisterEventHotKey` にそのまま渡す想定）で保持する。
@@ -34,6 +35,7 @@ public final class Settings {
         case resultLimit
         case inlineBlobThreshold
         case skipConcealed
+        case panelFrame
     }
 
     public init(defaults: UserDefaults = .standard) {
@@ -106,5 +108,25 @@ public final class Settings {
     public var skipConcealed: Bool {
         get { defaults.bool(forKey: Key.skipConcealed.rawValue) }
         set { defaults.set(newValue, forKey: Key.skipConcealed.rawValue) }
+    }
+
+    /// 検索パネルの位置・大きさ（Issue 0009）。未保存・不正値なら nil を返し、
+    /// 呼び出し側で既定配置を使わせる。既定値を登録しないのもそのためである。
+    public var panelFrame: CGRect? {
+        get {
+            guard let values = defaults.array(forKey: Key.panelFrame.rawValue) as? [Double],
+                  values.count == 4 else { return nil }
+            return CGRect(x: values[0], y: values[1], width: values[2], height: values[3])
+        }
+        set {
+            guard let rect = newValue else {
+                defaults.removeObject(forKey: Key.panelFrame.rawValue)
+                return
+            }
+            defaults.set(
+                [Double(rect.origin.x), Double(rect.origin.y), Double(rect.width), Double(rect.height)],
+                forKey: Key.panelFrame.rawValue
+            )
+        }
     }
 }

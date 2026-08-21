@@ -279,8 +279,9 @@ fzf と同じ手法を採る。
 
 | 項目 | 仕様 |
 | --- | --- |
-| 種別 | `NSPanel`（`.nonactivatingPanel`、ボーダーレス、`level = .floating`） |
-| 位置 | アクティブなスクリーンの中央上寄り。幅 720pt 程度 |
+| 種別 | `NSPanel`（`.nonactivatingPanel`、ボーダーレス、`level = .floating`。`styleMask` に `.resizable` を追加し、`isMovableByWindowBackground = true` としてマウスでの移動・リサイズに対応する） |
+| 位置・大きさ | `UserDefaults`（`panelFrame`）に保存した位置・大きさがあれば復元し、無ければ既定配置（アクティブなスクリーンの中央上寄り、720×420pt 程度）を使う。いずれもアクティブなスクリーンの `visibleFrame` に収まるようクランプしてから適用する |
+| サイズの安定 | 一覧・プレビュー各ビューの content compression resistance / content hugging を `.defaultLow` に下げ、内容の固有サイズによる拡大を抑止する。保険として `contentMinSize`（480×320）と `contentMaxSize`（アクティブなスクリーンの `visibleFrame` に追従）も設定する |
 | 構成 | 下部に検索フィールド（`NSSearchField`）。上部は左右分割し、左に結果一覧（`NSTableView`、55%）、右にプレビューペイン（45%）を配置する。中央の間隔は 12pt。比率は `NSLayoutConstraint` の multiplier で表現し、`NSSplitView` は使わない |
 | 並び順 | 一覧は最新（検索時は関連度が最上位のもの）を最下行に表示する。`ResultsProvider` は最新順（先頭が最上位）で返すため、`PickerViewController` 側で反転して保持する。結果の再読み込み時の既定選択は最終行とし、その行までスクロールする |
 | 行の表示 | プレビュー本文（1〜2 行）、コピー元アプリ名、相対時刻 |
@@ -309,6 +310,10 @@ fzf と同じ手法を採る。
 
 プレビューは `previewBox` 内に `NSImageView` を `NSScrollView`（テキスト）と同じ領域へ重ねて配置し、選択項目が `kind == .image` のときは画像、それ以外はテキストを表示する排他切り替えとした。画像データの読み出しは `HistoryStore.loadPreviewImageData(itemID:)` を使い、取得・生成に失敗した場合はテキストプレビュー（`loadPreviewText` → なければ `preview_text`）へフォールバックする。一覧行の表示（`HistoryItemCellView`）はテキストのままで、行にサムネイルは出さない。
 
+**内容の長さでウィンドウが変わらないようにした理由**
+
+`contentViewController` を持つウィンドウでは、ウィンドウサイズ自体が Auto Layout 上の変数として扱われ、「現在のサイズに留まろうとする」制約の優先度は `NSLayoutPriority.windowSizeStayPut`（500）しかない。一方コンテンツ側の content compression resistance は既定 750 と高いため、長いテキストや大きな画像で内容の固有サイズが大きくなるとウィンドウが押し広げられてしまう。そのため一覧・プレビュー各ビューの content compression resistance と content hugging をいずれも `.defaultLow`（250）へ下げ、押し広げの起点を断った。
+
 ### 7.2 キー操作
 
 | キー | 動作 |
@@ -316,7 +321,7 @@ fzf と同じ手法を採る。
 | ホットキー（既定 ⌥⌘V） | パネルの表示 / 非表示トグル |
 | ↑ / ↓ , ⌃P / ⌃N | 選択移動 |
 | Enter | 確定（クリップボードへ書き戻してパネルを閉じる） |
-| Esc | キャンセルして閉じる |
+| Esc | キャンセルして閉じる。フォーカスの位置に関わらず効く（`PickerViewController` が `cancelOperation(_:)` をレスポンダチェーンで受ける） |
 | ⌘E | 選択中のテキスト項目を nvim で編集（7.5） |
 | ⌘↩ | nvim 編集の確定（編集モード中のみ） |
 | ⌘. | nvim 編集の破棄（編集モード中のみ） |
@@ -465,6 +470,7 @@ macOS の press-and-hold（`ApplePressAndHoldEnabled`、既定 ON）が有効だ
 | `resultLimit` | 200 | 一覧に表示する最大件数 |
 | `inlineBlobThreshold` | 64 KB | この値以下は DB 内 BLOB、超過は外部ファイル |
 | `skipConcealed` | true | 機密フラグ付きデータをスキップ |
+| `panelFrame` | なし | パネルの位置・大きさ。移動・リサイズ時に保存し、次回表示時に復元する。未保存時は既定配置を使う |
 
 ---
 
