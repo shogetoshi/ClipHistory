@@ -230,12 +230,7 @@ public final class HistoryStore {
     /// - Returns: `public.utf8-plain-text` の表現が無い場合、または UTF-8 として解釈できない
     ///   場合は `nil`。改行・タブ・空白などは一切加工しない。
     public func loadPreviewText(itemID: Int64, maxCharacters: Int) throws -> String? {
-        let representations = try fetchRepresentations(itemID: itemID)
-        guard let textRepresentation = representations.first(where: { $0.uti == "public.utf8-plain-text" }) else {
-            return nil
-        }
-        let data = try loadData(for: textRepresentation)
-        guard let text = String(data: data, encoding: .utf8) else {
+        guard let text = try loadText(itemID: itemID) else {
             return nil
         }
         if text.count > maxCharacters {
@@ -251,15 +246,21 @@ public final class HistoryStore {
     /// - Returns: `public.utf8-plain-text` の表現が無い場合、または UTF-8 として解釈できない
     ///   場合は `nil`。
     public func loadFullText(itemID: Int64) throws -> String? {
+        try loadText(itemID: itemID)
+    }
+
+    /// `representations` から `PasteboardTextType.utf8PlainText` の表現を探して読み出し、
+    /// UTF-8 として解釈する。`loadPreviewText` と `loadFullText` の共通処理。
+    ///
+    /// - Parameter itemID: 対象の item id
+    /// - Returns: 対象の表現が無い場合、または UTF-8 として解釈できない場合は `nil`。
+    private func loadText(itemID: Int64) throws -> String? {
         let representations = try fetchRepresentations(itemID: itemID)
-        guard let textRepresentation = representations.first(where: { $0.uti == "public.utf8-plain-text" }) else {
+        guard let textRepresentation = representations.first(where: { $0.uti == PasteboardTextType.utf8PlainText }) else {
             return nil
         }
         let data = try loadData(for: textRepresentation)
-        guard let text = String(data: data, encoding: .utf8) else {
-            return nil
-        }
-        return text
+        return String(data: data, encoding: .utf8)
     }
 
     /// プレビューペインに画像を表示するために使う。`loadPreviewText` と対になるメソッド。

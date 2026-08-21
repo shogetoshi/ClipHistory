@@ -95,7 +95,7 @@ public final class ClipboardMonitor {
                 sourceAppBundleID: frontApp?.bundleIdentifier,
                 sourceAppName: frontApp?.localizedName,
                 representations: [
-                    HistoryStore.NewRepresentation(uti: "public.utf8-plain-text", data: data)
+                    HistoryStore.NewRepresentation(uti: PasteboardTextType.utf8PlainText, data: data)
                 ]
             )
 

@@ -107,7 +107,7 @@ final class PickerPanelController: NSObject {
         }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setData(data, forType: NSPasteboard.PasteboardType("public.utf8-plain-text"))
+        pasteboard.setData(data, forType: NSPasteboard.PasteboardType(PasteboardTextType.utf8PlainText))
         panel.orderOut(nil)
         restoreFocus()
     }
