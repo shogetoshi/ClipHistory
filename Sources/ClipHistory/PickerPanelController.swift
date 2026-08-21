@@ -7,6 +7,7 @@ final class PickerPanelController: NSObject {
     private let panel: PickerPanel
     private let pickerViewController: PickerViewController
     private let historyStore: HistoryStore
+    private let settings: Settings
 
     private static let panelSize = NSSize(width: 720, height: 420)
 
@@ -16,6 +17,7 @@ final class PickerPanelController: NSObject {
 
     init(historyStore: HistoryStore, resultsProvider: ResultsProvider, settings: Settings) {
         self.historyStore = historyStore
+        self.settings = settings
         let contentRect = NSRect(origin: .zero, size: Self.panelSize)
         panel = PickerPanel(contentRect: contentRect)
         pickerViewController = PickerViewController(resultsProvider: resultsProvider, settings: settings, historyStore: historyStore)
@@ -127,18 +129,33 @@ final class PickerPanelController: NSObject {
         }
     }
 
-    /// アクティブなスクリーン（マウスカーソルがあるスクリーン）の中央上寄りに配置する（設計書 7.1）。
+    /// 保存済みの位置・大きさがあればそれを復元し、なければアクティブなスクリーン（マウスカーソルが
+    /// あるスクリーン）の中央上寄りに配置する（設計書 7.1、Issue 0009）。いずれの場合も
+    /// アクティブスクリーンの visibleFrame に収まるようクランプする。
     private func positionPanel() {
         guard let screen = activeScreen() else { return }
         let visibleFrame = screen.visibleFrame
-        let size = Self.panelSize
-        let x = visibleFrame.midX - size.width / 2
-        // 「中央上寄り」: 画面上端から visibleFrame 高さの25%の位置にパネル上端がくるようにする
-        let y = visibleFrame.maxY - visibleFrame.height * 0.25 - size.height
-        panel.setFrame(
-            NSRect(x: x, y: max(y, visibleFrame.minY), width: size.width, height: size.height),
-            display: false
-        )
+        let frame: NSRect
+        if let savedFrame = settings.panelFrame {
+            frame = NSRect(origin: savedFrame.origin, size: savedFrame.size)
+        } else {
+            let size = Self.panelSize
+            let x = visibleFrame.midX - size.width / 2
+            // 「中央上寄り」: 画面上端から visibleFrame 高さの25%の位置にパネル上端がくるようにする
+            let y = visibleFrame.maxY - visibleFrame.height * 0.25 - size.height
+            frame = NSRect(x: x, y: max(y, visibleFrame.minY), width: size.width, height: size.height)
+        }
+        panel.setFrame(clamped(frame, to: visibleFrame), display: false)
+    }
+
+    /// 矩形を `screenFrame` に収まるようクランプする（Issue 0009）。
+    /// まず幅・高さを画面以下に切り詰め、そのうえで原点を画面内側に収まる範囲へ移動させる。
+    private func clamped(_ rect: NSRect, to screenFrame: NSRect) -> NSRect {
+        let width = min(rect.width, screenFrame.width)
+        let height = min(rect.height, screenFrame.height)
+        let x = min(max(rect.minX, screenFrame.minX), screenFrame.maxX - width)
+        let y = min(max(rect.minY, screenFrame.minY), screenFrame.maxY - height)
+        return NSRect(x: x, y: y, width: width, height: height)
     }
 
     private func activeScreen() -> NSScreen? {
@@ -155,5 +172,20 @@ extension PickerPanelController: NSWindowDelegate {
         // 編集の終了（⌘↩ 確定 / ⌘. 破棄）は PickerViewController 側のキー操作で明示的に行う。
         guard !pickerViewController.isEditingInNvim else { return }
         hide(restoringFocus: false)
+    }
+
+    /// 利用者がパネルを移動したら位置を保存する（Issue 0009）。
+    /// `panel.isVisible` を見るのは、`positionPanel()` 自身の `setFrame` や非表示中の
+    /// フレーム変更で誤って保存してしまわないようにするため。
+    func windowDidMove(_ notification: Notification) {
+        guard panel.isVisible else { return }
+        settings.panelFrame = panel.frame
+    }
+
+    /// 利用者がパネルをリサイズしたら大きさを保存する（Issue 0009）。
+    /// `panel.isVisible` を見る理由は `windowDidMove(_:)` と同様である。
+    func windowDidResize(_ notification: Notification) {
+        guard panel.isVisible else { return }
+        settings.panelFrame = panel.frame
     }
 }
