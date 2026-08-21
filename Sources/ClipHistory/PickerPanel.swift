@@ -13,7 +13,9 @@ final class PickerPanel: NSPanel {
     init(contentRect: NSRect) {
         super.init(
             contentRect: contentRect,
-            styleMask: [.borderless, .nonactivatingPanel],
+            // ボーダーレスでも .resizable を付けることでウィンドウ端のドラッグによる
+            // リサイズが可能になる（Issue 0009）。
+            styleMask: [.borderless, .nonactivatingPanel, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -21,7 +23,8 @@ final class PickerPanel: NSPanel {
         isOpaque = false
         backgroundColor = .clear
         level = .floating
-        isMovableByWindowBackground = false
+        // 背景（マウスイベントを消費しないビュー上）のドラッグでパネルを移動できるようにする（Issue 0009）。
+        isMovableByWindowBackground = true
         // 他アプリがアクティブになった際に OS が自動でパネルを隠す挙動を無効化する。
         // フォーカスロスト時に閉じる制御は windowDidResignKey で明示的に行うため、
         // ここで自動非表示を許可すると二重に制御が走り挙動が読みにくくなる。
