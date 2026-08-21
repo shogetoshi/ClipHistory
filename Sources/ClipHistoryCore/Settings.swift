@@ -23,6 +23,9 @@ public struct HotKeyConfig: Equatable {
 public final class Settings {
     public static let shared = Settings()
 
+    /// 履歴の保持件数上限として許容する範囲。設定画面の入力範囲もこれを参照する。
+    public static let maxItemCountRange = 1...100_000
+
     private let defaults: UserDefaults
 
     private enum Key: String {
@@ -59,10 +62,14 @@ public final class Settings {
         set { defaults.set(newValue, forKey: Key.pollingInterval.rawValue) }
     }
 
-    /// 履歴の保持件数上限（既定 10000、最大 100000）
+    /// 履歴の保持件数上限（既定 10000）。不正値を掴まないよう読み書きの双方でクランプする。
     public var maxItemCount: Int {
-        get { min(100_000, max(1, defaults.integer(forKey: Key.maxItemCount.rawValue))) }
-        set { defaults.set(min(100_000, max(1, newValue)), forKey: Key.maxItemCount.rawValue) }
+        get { Self.clampMaxItemCount(defaults.integer(forKey: Key.maxItemCount.rawValue)) }
+        set { defaults.set(Self.clampMaxItemCount(newValue), forKey: Key.maxItemCount.rawValue) }
+    }
+
+    private static func clampMaxItemCount(_ value: Int) -> Int {
+        min(maxItemCountRange.upperBound, max(maxItemCountRange.lowerBound, value))
     }
 
     /// 呼び出しホットキー（既定 ⌥⌘V）

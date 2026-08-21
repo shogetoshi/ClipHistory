@@ -86,7 +86,7 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("履歴") {
-                Stepper(value: $viewModel.maxItemCount, in: 1...100_000, step: 100) {
+                Stepper(value: $viewModel.maxItemCount, in: ClipHistoryCore.Settings.maxItemCountRange, step: 100) {
                     labeledValue("保持件数上限", "\(viewModel.maxItemCount) 件")
                 }
             }
