@@ -15,27 +15,24 @@ final class PickerViewController: NSViewController {
     /// 編集モード中は `PickerPanelController` 側でフォーカス喪失による自動クローズを止めるため、
     /// 外から読めるようにする。
     var isEditingInNvim: Bool { nvimEditController.isEditing }
-    /// nvim 編集モードのライフサイクルを担う（Issue 0006 / 0007）。`previewBox` が
+    /// nvim 編集モードのライフサイクルを担う（Issue 0006 / 0007）。`previewPane` が
     /// `loadView()` を待たずに init 時点で生成済みのため lazy で保持できる。
-    private lazy var nvimEditController = NvimEditModeController(container: previewBox)
+    private lazy var nvimEditController = NvimEditModeController(container: previewPane)
 
     private let resultsProvider: ResultsProvider
     private let settings: Settings
     private let historyStore: HistoryStore
+    private let previewContentLoader: PreviewContentLoader
 
     private let searchField = NSSearchField()
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
     // プレビューペイン（Issue 0002）。一覧の右側に選択中アイテムの本文を表示する。
-    private let previewBox = NSBox()
-    private let previewScrollView = NSScrollView()
-    private let previewTextView = NSTextView()
-    // 画像プレビュー用（Issue 0004）。テキストと排他的に previewBox 内に表示する。
-    private let previewImageView = NSImageView()
+    private let previewPane = PreviewPaneView()
     /// プレビューとして読み込む最大文字数。一覧より大きく取り、長文もある程度確認できるようにする。
     private static let previewMaxCharacters = 4000
 
-    // 編集モードでのレイアウト差し替え用（Issue 0006）。通常時は previewBox を一覧の右45%に
+    // 編集モードでのレイアウト差し替え用（Issue 0006）。通常時は previewPane を一覧の右45%に
     // 配置するが、nvim 編集中は全幅に広げる必要があるため、対象の制約をアクティブ/非アクティブ
     // 切り替えできるようストアドプロパティとして保持する。
     private var previewLeadingNormalConstraint: NSLayoutConstraint!
@@ -61,6 +58,7 @@ final class PickerViewController: NSViewController {
         self.resultsProvider = resultsProvider
         self.settings = settings
         self.historyStore = historyStore
+        self.previewContentLoader = PreviewContentLoader(historyStore: historyStore, maxCharacters: Self.previewMaxCharacters)
         super.init(nibName: nil, bundle: nil)
 
         nvimEditController.onEditingChanged = { [weak self] editing in
@@ -130,50 +128,16 @@ final class PickerViewController: NSViewController {
         // プレビューは一覧の右側に並べる（Issue 0002）。上下分割にすると、ただでさえ
         // 高さの限られたパネル内で一覧の可視行数が半分になってしまい選択操作がしづらくなるため、
         // 横方向に並べて一覧の縦の見え方はそのまま保つ。
-        previewTextView.isEditable = false
-        previewTextView.isSelectable = true
-        previewTextView.drawsBackground = false
-        previewTextView.textContainerInset = NSSize(width: 4, height: 4)
-        // 等幅フォントにする。コピーしたコードや設定ファイルなどを崩さず、
-        // インデントや桁位置が意図通りに見えるようにするため。
-        previewTextView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-        previewTextView.isVerticallyResizable = true
-        previewTextView.isHorizontallyResizable = false
-        previewTextView.autoresizingMask = [.width]
-        previewTextView.textContainer?.widthTracksTextView = true
-        previewTextView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
-
-        previewScrollView.translatesAutoresizingMaskIntoConstraints = false
-        previewScrollView.documentView = previewTextView
-        previewScrollView.hasVerticalScroller = true
-        previewScrollView.drawsBackground = false
-        previewScrollView.autohidesScrollers = true
-
-        previewBox.translatesAutoresizingMaskIntoConstraints = false
-        previewBox.boxType = .custom
-        previewBox.fillColor = .textBackgroundColor
-        previewBox.borderColor = .separatorColor
-        previewBox.cornerRadius = 6
-        previewBox.titlePosition = .noTitle
-        previewBox.addSubview(previewScrollView)
-
-        // 画像プレビュー（Issue 0004）。previewScrollView と同じ領域に重ねて配置し、
-        // 表示時はテキスト側を隠すことで排他的に切り替える。
-        previewImageView.translatesAutoresizingMaskIntoConstraints = false
-        previewImageView.imageScaling = .scaleProportionallyUpOrDown
-        previewImageView.imageAlignment = .alignCenter
-        previewImageView.isHidden = true
-        previewBox.addSubview(previewImageView)
-
-        root.addSubview(previewBox)
+        previewPane.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(previewPane)
 
         // 一覧55% / プレビュー45%。中央に12ptの間隔を空け、比率は multiplier で表現する。
-        // 編集モード（Issue 0006）では previewBox を全幅に広げるため、切り替え対象の2制約は
+        // 編集モード（Issue 0006）では previewPane を全幅に広げるため、切り替え対象の2制約は
         // ストアドプロパティとして保持し、後から isActive を切り替えられるようにする。
-        previewLeadingNormalConstraint = previewBox.leadingAnchor.constraint(equalTo: scrollView.trailingAnchor, constant: 12)
-        previewWidthConstraint = previewBox.widthAnchor.constraint(equalTo: scrollView.widthAnchor, multiplier: 45.0 / 55.0)
+        previewLeadingNormalConstraint = previewPane.leadingAnchor.constraint(equalTo: scrollView.trailingAnchor, constant: 12)
+        previewWidthConstraint = previewPane.widthAnchor.constraint(equalTo: scrollView.widthAnchor, multiplier: 45.0 / 55.0)
         // 編集モード用の全幅レイアウト。初期状態では使わないため非アクティブのまま保持する。
-        previewLeadingFullWidthConstraint = previewBox.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16)
+        previewLeadingFullWidthConstraint = previewPane.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16)
 
         // contentViewController を持つウィンドウは Auto Layout 上でウィンドウサイズ自体が
         // 変数になっており、「現在のサイズに留まろうとする」制約の優先度は
@@ -183,7 +147,7 @@ final class PickerViewController: NSViewController {
         // これを防ぐため、押し広げの起点となるビューの圧縮抵抗をwindowSizeStayPutより低い
         // .defaultLowに下げる。あわせて、内容が小さいときにウィンドウを縮める方向へ
         // 引っ張らないよう content hugging priority も.defaultLowに下げる（Issue 0009）。
-        for view in [scrollView, previewScrollView, previewTextView, previewImageView, previewBox] as [NSView] {
+        for view in [scrollView, previewPane] as [NSView] {
             view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             view.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
             view.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -200,21 +164,11 @@ final class PickerViewController: NSViewController {
             scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16),
             scrollView.bottomAnchor.constraint(equalTo: searchField.topAnchor, constant: -12),
 
-            previewBox.topAnchor.constraint(equalTo: root.topAnchor, constant: 16),
+            previewPane.topAnchor.constraint(equalTo: root.topAnchor, constant: 16),
             previewLeadingNormalConstraint,
-            previewBox.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -16),
-            previewBox.bottomAnchor.constraint(equalTo: searchField.topAnchor, constant: -12),
-            previewWidthConstraint,
-
-            previewScrollView.topAnchor.constraint(equalTo: previewBox.topAnchor, constant: 1),
-            previewScrollView.leadingAnchor.constraint(equalTo: previewBox.leadingAnchor, constant: 1),
-            previewScrollView.trailingAnchor.constraint(equalTo: previewBox.trailingAnchor, constant: -1),
-            previewScrollView.bottomAnchor.constraint(equalTo: previewBox.bottomAnchor, constant: -1),
-
-            previewImageView.topAnchor.constraint(equalTo: previewBox.topAnchor, constant: 1),
-            previewImageView.leadingAnchor.constraint(equalTo: previewBox.leadingAnchor, constant: 1),
-            previewImageView.trailingAnchor.constraint(equalTo: previewBox.trailingAnchor, constant: -1),
-            previewImageView.bottomAnchor.constraint(equalTo: previewBox.bottomAnchor, constant: -1)
+            previewPane.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -16),
+            previewPane.bottomAnchor.constraint(equalTo: searchField.topAnchor, constant: -12),
+            previewWidthConstraint
         ])
 
         view = root
@@ -267,54 +221,13 @@ final class PickerViewController: NSViewController {
     }
 
     /// 選択中アイテムのプレビュー本文を更新する。
-    /// 一覧側の `previewText` は表示用に改行・連続空白を畳んで1行・200文字程度に短縮した値だが、
-    /// プレビューでは改行を含む実データをそのまま見せたいため、ここでは一覧用の値を使わず
-    /// `historyStore.loadPreviewText` で `public.utf8-plain-text` の実データを読み直す。
     private func updatePreview() {
         let row = tableView.selectedRow
         guard !items.isEmpty, row >= 0, row < items.count else {
-            previewTextView.string = ""
-            showPreviewImage(nil)
+            previewPane.show(.empty)
             return
         }
-        let item = items[row]
-
-        // 画像アイテムの場合は画像を優先して表示する。取得・生成に失敗した場合は
-        // テキストプレビューにフォールバックする（Issue 0004）。
-        if item.kind == .image {
-            do {
-                if let loaded = try historyStore.loadPreviewImageData(itemID: item.id), let image = NSImage(data: loaded.data) {
-                    showPreviewImage(image)
-                    return
-                }
-            } catch {
-                NSLog("ClipHistory: HistoryStore.loadPreviewImageData(itemID:) failed: \(error)")
-            }
-        }
-
-        let text: String
-        do {
-            if let loaded = try historyStore.loadPreviewText(itemID: item.id, maxCharacters: Self.previewMaxCharacters) {
-                text = loaded
-            } else {
-                // テキスト表現が無い（将来の画像などを想定）場合は、一覧と同じ情報を出す
-                text = item.previewText ?? ""
-            }
-        } catch {
-            text = ""
-            NSLog("ClipHistory: HistoryStore.loadPreviewText(itemID:) failed: \(error)")
-        }
-        previewTextView.string = text
-        previewTextView.scrollToBeginningOfDocument(nil)
-        showPreviewImage(nil)
-    }
-
-    /// プレビューの表示モードを切り替える。画像とテキストは同じ領域を共有するため、
-    /// 一方を表示する際は他方を隠して排他的に表示する（Issue 0004）。
-    private func showPreviewImage(_ image: NSImage?) {
-        previewImageView.image = image
-        previewImageView.isHidden = image == nil
-        previewScrollView.isHidden = image != nil
+        previewPane.show(previewContentLoader.content(for: items[row]))
     }
 
     private func moveSelection(by delta: Int) {
@@ -416,7 +329,7 @@ final class PickerViewController: NSViewController {
 
     /// 通常レイアウトと nvim 編集用の全幅レイアウトを切り替える（Issue 0006）。
     /// プレビュー幅45%（約300pt）では nvim の編集領域として狭すぎるため、編集中は
-    /// 一覧を隠して previewBox を全幅に広げる。
+    /// 一覧を隠して previewPane を全幅に広げる。
     private func setEditingLayout(_ editing: Bool) {
         if editing {
             previewLeadingNormalConstraint.isActive = false
@@ -429,9 +342,7 @@ final class PickerViewController: NSViewController {
             previewWidthConstraint.isActive = true
             scrollView.isHidden = false
         }
-        // 編集中はテキスト・画像どちらのプレビューも隠し、ターミナルのみを表示する。
-        previewScrollView.isHidden = editing
-        previewImageView.isHidden = editing
+        previewPane.setContentHidden(editing)
     }
 }
 
