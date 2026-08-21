@@ -1,9 +1,10 @@
 import Cocoa
 import ClipHistoryCore
 
-/// 検索フィールドと結果一覧（`NSTableView`）の描画を担う（設計書 3.1 / 7.1）。
-/// 実データの取得は `ResultsProvider` にのみ依存し、フィルタリングロジックはここに持たない
-/// （フェーズ3の `SearchIndex` に差し替えるための継ぎ目）。
+/// 検索フィールドと結果一覧（`NSTableView`）の描画・キー操作の受け付けを担う（設計書 3.1 / 7.1）。
+/// ビュー以外の責務は分けてある。一覧の状態と検索は `PickerViewModel`、プレビューの表示は
+/// `PreviewPaneView` と `PreviewContentLoader`、nvim 編集モードは `NvimEditModeController`。
+/// 絞り込みロジックは `ResultsProvider` の向こう側にあり、ここには持たない（設計書 13.2）。
 final class PickerViewController: NSViewController {
     /// 確定時に選択項目を渡すコールバック。クリップボードへの書き戻しは呼び出し元が行う。
     var onCommit: ((HistoryItem) -> Void)?
@@ -19,10 +20,9 @@ final class PickerViewController: NSViewController {
     /// `loadView()` を待たずに init 時点で生成済みのため lazy で保持できる。
     private lazy var nvimEditController = NvimEditModeController(container: previewPane)
 
-    private let resultsProvider: ResultsProvider
-    private let settings: Settings
     private let historyStore: HistoryStore
     private let previewContentLoader: PreviewContentLoader
+    private let viewModel: PickerViewModel
 
     private let searchField = NSSearchField()
     private let tableView = NSTableView()
@@ -39,27 +39,18 @@ final class PickerViewController: NSViewController {
     private var previewWidthConstraint: NSLayoutConstraint!
     private var previewLeadingFullWidthConstraint: NSLayoutConstraint!
 
-    private var items: [HistoryItem] = []
-    /// 打鍵ごとの `reload()` 実行を抑えるデバウンス用タイマー（設計書6.5、40ms）。
-    /// 検索自体はメインスレッド同期実行のままだが、これにより高速な連続入力時の
-    /// 実行回数そのものを減らす（指揮官指示）。
-    private var reloadDebounceTimer: Timer?
-    private static let reloadDebounceInterval: TimeInterval = 0.04
-    private let relativeFormatter: RelativeDateTimeFormatter = {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter
-    }()
-
     private static let cellIdentifier = NSUserInterfaceItemIdentifier("HistoryItemCell")
     private static let columnIdentifier = NSUserInterfaceItemIdentifier("HistoryItemColumn")
 
     init(resultsProvider: ResultsProvider, settings: Settings, historyStore: HistoryStore) {
-        self.resultsProvider = resultsProvider
-        self.settings = settings
         self.historyStore = historyStore
         self.previewContentLoader = PreviewContentLoader(historyStore: historyStore, maxCharacters: Self.previewMaxCharacters)
+        self.viewModel = PickerViewModel(resultsProvider: resultsProvider, settings: settings)
         super.init(nibName: nil, bundle: nil)
+
+        viewModel.onItemsChanged = { [weak self] in
+            self?.applyItems()
+        }
 
         nvimEditController.onEditingChanged = { [weak self] editing in
             guard let self else { return }
@@ -180,37 +171,17 @@ final class PickerViewController: NSViewController {
         // パネルが何らかの理由で編集モードのまま再表示された場合に備えた保険（Issue 0006）。
         nvimEditController.finish(commit: false)
         searchField.stringValue = ""
-        reloadDebounceTimer?.invalidate()
-        reloadDebounceTimer = nil
-        reload()
+        viewModel.cancelPendingReload()
+        viewModel.reload(query: "")
         view.window?.makeFirstResponder(searchField)
     }
 
-    /// 打鍵のたびに呼ばれる。直前のタイマーを破棄して再スケジュールすることで、
-    /// 連続入力中は最後の1回だけが実際に `reload()` を実行する（設計書6.5、40msデバウンス）。
-    private func scheduleReload() {
-        reloadDebounceTimer?.invalidate()
-        reloadDebounceTimer = Timer.scheduledTimer(withTimeInterval: Self.reloadDebounceInterval, repeats: false) { [weak self] _ in
-            self?.reload()
-        }
-    }
-
-    private func reload() {
-        let query = searchField.stringValue
-        do {
-            // resultLimit は毎回 Settings から読み直す（設定画面での変更が次回の読み出しで
-            // 反映されるようにするため。フェーズ4指示）。
-            // プロバイダは最新順（先頭が最上位）で返すが、履歴なので最新を下に置きたいため
-            // ここで反転する（Issue 0003）。
-            items = Array(try resultsProvider.results(for: query, limit: settings.resultLimit).reversed())
-        } catch {
-            items = []
-            NSLog("ClipHistory: ResultsProvider.results(for:) failed: \(error)")
-        }
+    /// 結果が入れ替わったときに一覧の表示・選択・プレビューを追従させる。
+    private func applyItems() {
         tableView.reloadData()
-        if !items.isEmpty {
+        if viewModel.count > 0 {
             // 反転後は最終行が最新のアイテムになるため、最終行を選択する（Issue 0003）。
-            let lastRow = items.count - 1
+            let lastRow = viewModel.count - 1
             tableView.selectRowIndexes(IndexSet(integer: lastRow), byExtendingSelection: false)
             tableView.scrollRowToVisible(lastRow)
         }
@@ -222,26 +193,24 @@ final class PickerViewController: NSViewController {
 
     /// 選択中アイテムのプレビュー本文を更新する。
     private func updatePreview() {
-        let row = tableView.selectedRow
-        guard !items.isEmpty, row >= 0, row < items.count else {
+        guard let item = viewModel.item(at: tableView.selectedRow) else {
             previewPane.show(.empty)
             return
         }
-        previewPane.show(previewContentLoader.content(for: items[row]))
+        previewPane.show(previewContentLoader.content(for: item))
     }
 
     private func moveSelection(by delta: Int) {
-        guard !items.isEmpty else { return }
+        guard viewModel.count > 0 else { return }
         let current = tableView.selectedRow
-        let next = current < 0 ? 0 : min(max(current + delta, 0), items.count - 1)
+        let next = current < 0 ? 0 : min(max(current + delta, 0), viewModel.count - 1)
         tableView.selectRowIndexes(IndexSet(integer: next), byExtendingSelection: false)
         tableView.scrollRowToVisible(next)
     }
 
     private func commitSelection() {
-        let row = tableView.selectedRow
-        guard row >= 0, row < items.count else { return }
-        onCommit?(items[row])
+        guard let item = viewModel.item(at: tableView.selectedRow) else { return }
+        onCommit?(item)
     }
 
     @objc private func handleDoubleClick() {
@@ -297,12 +266,10 @@ final class PickerViewController: NSViewController {
     private func beginNvimEdit() {
         guard !isEditingInNvim else { return }
 
-        let row = tableView.selectedRow
-        guard row >= 0, row < items.count else {
+        guard let item = viewModel.item(at: tableView.selectedRow) else {
             NSSound.beep()
             return
         }
-        let item = items[row]
 
         // 画像アイテムはテキストとして編集できないため対象外とする。
         guard item.kind != .image else {
@@ -348,13 +315,13 @@ final class PickerViewController: NSViewController {
 
 extension PickerViewController: NSTableViewDataSource {
     func numberOfRows(in tableView: NSTableView) -> Int {
-        items.count
+        viewModel.count
     }
 }
 
 extension PickerViewController: NSTableViewDelegate {
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        let item = items[row]
+        guard let display = viewModel.rowDisplay(at: row) else { return nil }
 
         let cell: HistoryItemCellView
         if let reused = tableView.makeView(withIdentifier: Self.cellIdentifier, owner: self) as? HistoryItemCellView {
@@ -364,17 +331,10 @@ extension PickerViewController: NSTableViewDelegate {
             cell.identifier = Self.cellIdentifier
         }
 
-        let relativeTime = relativeFormatter.localizedString(
-            for: Date(timeIntervalSince1970: Double(item.createdAt) / 1000),
-            relativeTo: Date()
-        )
-        // 一覧は表示専用の整形を通す（修正2）。DB の preview_text 自体は変更しない。
-        // 複数行のコピー内容がそのまま描画されると改行の数だけ行内を占め、行の見た目が
-        // 不揃いになるため、改行・タブ・連続空白を半角スペース1個へ畳んでから渡す。
         cell.configure(
-            preview: DisplayText.singleLine(item.previewText ?? ""),
-            sourceAppName: item.sourceAppName ?? "不明なアプリ",
-            relativeTime: relativeTime
+            preview: display.preview,
+            sourceAppName: display.sourceAppName,
+            relativeTime: display.relativeTime
         )
         return cell
     }
@@ -387,7 +347,7 @@ extension PickerViewController: NSTableViewDelegate {
 
 extension PickerViewController: NSSearchFieldDelegate {
     func controlTextDidChange(_ obj: Notification) {
-        scheduleReload()
+        viewModel.scheduleReload(query: searchField.stringValue)
     }
 
     /// 検索フィールドにフォーカスがある状態でも ↑↓ / Enter / Esc がテーブル側の操作として
