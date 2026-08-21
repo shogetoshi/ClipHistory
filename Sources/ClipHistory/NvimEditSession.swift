@@ -39,6 +39,10 @@ final class NvimEditSession {
     private let nvimPath: String
     /// 読み戻し時、末尾改行の有無を元テキストに合わせるために保持する。
     private let sourceEndsWithNewline: Bool
+    /// `init` でテキストを書き出した直後の `sourceURL` の更新日時。
+    /// nvim が `:w` で保存したかどうかを、この日時からの変化で判定するために保持する。
+    /// 取得できなかった場合は nil とし、その場合は「保存されていない」扱いにする。
+    private let sourceModificationDate: Date?
 
     /// nvim の絶対パスを解決する。
     /// GUI アプリ（`.app` バンドル）としての起動時、プロセスの PATH には
@@ -115,6 +119,9 @@ final class NvimEditSession {
 
         self.sourceEndsWithNewline = text.hasSuffix("\n")
         try text.write(to: sourceURL, atomically: true, encoding: .utf8)
+        self.sourceModificationDate = try? sourceURL.resourceValues(
+            forKeys: [.contentModificationDateKey]
+        ).contentModificationDate
     }
 
     /// `LocalProcessTerminalView.startProcess(executable:args:)` にそのまま渡す実行ファイル。
@@ -191,6 +198,34 @@ final class NvimEditSession {
 
         // `writefile` は各行末に必ず改行を付与するため、元テキストが改行で終わっていなければ
         // 末尾に付いた改行1個だけを取り除いて、元の見た目に合わせる。
+        if !sourceEndsWithNewline, text.hasSuffix("\n") {
+            return String(text.dropLast())
+        }
+        return text
+    }
+
+    /// nvim が `:w` で保存して終了したかどうかを判定し、保存されていればその本文を返す。
+    /// `sourceURL` の更新日時が `init` 時点から変化していれば「保存された」と判断する
+    /// （nvim を終了しただけでは、この判定により「保存して終了」と「保存せず終了」を
+    /// 区別できる）。保存されていないと判断した場合（更新日時が変化していない、
+    /// `init` 時に日時を取得できなかった、ファイルが既に存在しない等）は nil を返す。
+    func savedText() throws -> String? {
+        guard let sourceModificationDate else {
+            return nil
+        }
+        guard let currentModificationDate = try? sourceURL.resourceValues(
+            forKeys: [.contentModificationDateKey]
+        ).contentModificationDate else {
+            return nil
+        }
+        guard currentModificationDate != sourceModificationDate else {
+            return nil
+        }
+
+        let text = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        // `readEditedText()` と同様、nvim は保存時に行末へ必ず改行を付与するため、
+        // 元テキストが改行で終わっていなければ末尾に付いた改行1個だけを取り除く。
         if !sourceEndsWithNewline, text.hasSuffix("\n") {
             return String(text.dropLast())
         }
