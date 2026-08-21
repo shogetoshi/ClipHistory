@@ -363,6 +363,7 @@ nvim 編集モード中は Esc を含む全キーを nvim へ流すため、脱�
 | 取り出し | `nvim --server <sock> --remote-expr 'writefile(getbufline(bufnr(<src>),1,"$"), <out>)'` を `Process` で叩く |
 | 書き戻し | `public.utf8-plain-text` の**1表現のみ** |
 | 終了時の挙動 | 利用者が nvim を終了したらパネルも閉じる。`:wq` など**保存して終了**した場合はその本文をクリップボードへ書き戻し、`:q` など**保存せず終了**した場合は何もしない |
+| キーリピート | 起動時に `ApplePressAndHoldEnabled` をアプリのドメインで `false` にし、キー長押しのリピートがターミナルビューへ届くようにする |
 
 **なぜ常時 nvim にしないか**
 
@@ -404,6 +405,20 @@ nvim を終了する操作は利用者にとって「この項目の編集を終
 クリップボードへ書き戻す。変わっていなければ何もせず閉じる。`⌘↩` の `--remote-expr` による
 バッファ読み出しと違い、こちらは nvim が既に終了しており RPC で問い合わせる相手がいないため、
 ディスク上のファイルを見る方式を採る。
+
+**キー長押しのリピート**
+
+macOS の press-and-hold（`ApplePressAndHoldEnabled`、既定 ON）が有効だと、`interpretKeyEvents`
+経由で処理される**修飾なしキー**のキーリピートが抑止される。SwiftTerm の `TerminalView.keyDown`
+は修飾なしキーを `interpretKeyEvents` に渡すため、nvim で `l` を長押ししても連続移動しなかった
+（Issue 0008）。`⌃` 付きのキーは `interpretKeyEvents` を通らず直接送出されるためリピートが
+効いていた。症状が「Vim の通常キーだけ効かない」形で現れたのはこのためである。press-and-hold は
+プロセス単位でしか切り替えられないため、`main.swift` で `NSApplication` の生成前に
+`UserDefaults.standard.set(false, forKey: "ApplePressAndHoldEnabled")` を呼ぶ。登録ドメイン
+（`register(defaults:)`）はグローバルドメインより後に参照されるため、利用者がグローバルに
+設定していると効かない。アプリドメインならグローバルより優先される。副作用として、このアプリ内
+では検索フィールドでもアクセント候補のポップアップが出なくなる。クリップボード検索欄では候補
+入力の価値が薄いため許容する。
 
 ---
 
