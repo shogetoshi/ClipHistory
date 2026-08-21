@@ -205,9 +205,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `PickerPanelController` を組み立て、既定ホットキー（既定 ⌥⌘V。設計書 10節）で
     /// トグルできるようにする。
     private func setUpPicker(historyStore: HistoryStore, settings: Settings, searchIndex: SearchIndex) {
-        // フェーズ3: 最新順のみだった `RecentResultsProvider` から、fzfライクな絞り込みを行う
-        // `SearchResultsProvider` に差し替える（`RecentResultsProvider` 自体はテスト・
-        // フォールバック用として削除せず残す）。
         let resultsProvider = SearchResultsProvider(searchIndex: searchIndex, historyStore: historyStore)
         let controller = PickerPanelController(
             historyStore: historyStore,
