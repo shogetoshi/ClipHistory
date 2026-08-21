@@ -423,6 +423,18 @@ final class PickerViewController: NSViewController {
             }
         }
 
+        tearDownNvimEdit()
+
+        // onCommitEditedText はパネルを閉じるコールバックのため、後片付けが全て終わった後に呼ぶ。
+        if let editedText {
+            onCommitEditedText?(editedText)
+        }
+    }
+
+    /// nvim 編集モードの後片付けを行う（Issue 0007）。
+    /// nvim セッションの終了・破棄、ターミナルビューの取り外し、レイアウトの復元をまとめる。
+    /// `finishNvimEdit(commitEditedText:)` と `handleNvimTermination()` の双方から共通で呼ばれる。
+    private func tearDownNvimEdit() {
         nvimSession?.requestQuit()
         nvimSession?.cleanUp()
         nvimSession = nil
@@ -434,10 +446,28 @@ final class PickerViewController: NSViewController {
         setEditingLayout(false)
         updatePreview()
         view.window?.makeFirstResponder(searchField)
+    }
 
-        // onCommitEditedText はパネルを閉じるコールバックのため、後片付けが全て終わった後に呼ぶ。
-        if let editedText {
-            onCommitEditedText?(editedText)
+    /// nvim プロセスの終了を受けて編集モードを終える（Issue 0007）。
+    /// nvim を終了したらパネルを閉じる。保存されていればクリップボードへ書き戻し、
+    /// 保存されていなければ何もしない。
+    private func handleNvimTermination() {
+        guard isEditingInNvim else { return }
+
+        var savedText: String?
+        do {
+            savedText = try nvimSession?.savedText()
+        } catch {
+            NSLog("ClipHistory: NvimEditSession.savedText() failed: \(error)")
+            savedText = nil
+        }
+
+        tearDownNvimEdit()
+
+        if let savedText {
+            onCommitEditedText?(savedText)
+        } else {
+            onCancel?()
         }
     }
 
@@ -534,9 +564,11 @@ extension PickerViewController: LocalProcessTerminalViewDelegate {
     /// ユーザーが nvim 内で `:q` した場合の経路。SwiftTerm から呼ばれるスレッドが
     /// 保証されないため、後片付け（メインスレッド専用の AppKit 操作を含む）は
     /// `DispatchQueue.main.async` 経由でメインスレッドに乗せて行う。
+    /// nvim を終了したらパネルを閉じる。保存されていればクリップボードへ書き戻し、
+    /// 保存されていなければ何もしない（Issue 0007）。
     func processTerminated(source: TerminalView, exitCode: Int32?) {
         DispatchQueue.main.async { [weak self] in
-            self?.finishNvimEdit(commitEditedText: false)
+            self?.handleNvimTermination()
         }
     }
 
