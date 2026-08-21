@@ -163,6 +163,21 @@ final class PickerViewController: NSViewController {
         // 編集モード用の全幅レイアウト。初期状態では使わないため非アクティブのまま保持する。
         previewLeadingFullWidthConstraint = previewBox.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16)
 
+        // contentViewController を持つウィンドウは Auto Layout 上でウィンドウサイズ自体が
+        // 変数になっており、「現在のサイズに留まろうとする」制約の優先度は
+        // NSLayoutPriority.windowSizeStayPut（500）しかない。一方コンテンツ側の
+        // content compression resistance は既定で750と高いため、長いテキストや大きな画像で
+        // 固有サイズが大きくなるとウィンドウがそれに引きずられて拡大してしまう。
+        // これを防ぐため、押し広げの起点となるビューの圧縮抵抗をwindowSizeStayPutより低い
+        // .defaultLowに下げる。あわせて、内容が小さいときにウィンドウを縮める方向へ
+        // 引っ張らないよう content hugging priority も.defaultLowに下げる（Issue 0009）。
+        for view in [scrollView, previewScrollView, previewTextView, previewImageView, previewBox] as [NSView] {
+            view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            view.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+            view.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            view.setContentHuggingPriority(.defaultLow, for: .vertical)
+        }
+
         NSLayoutConstraint.activate([
             searchField.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -16),
             searchField.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16),

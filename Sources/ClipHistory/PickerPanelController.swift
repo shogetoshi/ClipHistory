@@ -10,6 +10,8 @@ final class PickerPanelController: NSObject {
     private let settings: Settings
 
     private static let panelSize = NSSize(width: 720, height: 420)
+    /// ウィンドウが内容（長いテキストや大きな画像）に引きずられて縮小・拡大しすぎないための下限（Issue 0009）。
+    private static let panelMinSize = NSSize(width: 480, height: 320)
 
     /// ホットキー押下時点の frontmost アプリ。パネルを閉じる際にここへフォーカスを戻す
     /// （設計書 7.3 手順1・3）。
@@ -24,6 +26,9 @@ final class PickerPanelController: NSObject {
         super.init()
 
         panel.contentViewController = pickerViewController
+        // contentViewController を持つウィンドウは内容の fitting size から contentMinSize が
+        // 自動決定されることがあるため、保険として明示しておく（Issue 0009）。
+        panel.contentMinSize = Self.panelMinSize
         panel.delegate = self
 
         pickerViewController.onCommit = { [weak self] item in
@@ -145,6 +150,8 @@ final class PickerPanelController: NSObject {
             let y = visibleFrame.maxY - visibleFrame.height * 0.25 - size.height
             frame = NSRect(x: x, y: max(y, visibleFrame.minY), width: size.width, height: size.height)
         }
+        // アクティブスクリーンごとに visibleFrame は変わるため、表示のたびに上限を更新する（Issue 0009）。
+        panel.contentMaxSize = visibleFrame.size
         panel.setFrame(clamped(frame, to: visibleFrame), display: false)
     }
 
