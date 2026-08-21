@@ -1,6 +1,5 @@
 import Cocoa
 import ClipHistoryCore
-import SwiftTerm
 
 /// 検索フィールドと結果一覧（`NSTableView`）の描画を担う（設計書 3.1 / 7.1）。
 /// 実データの取得は `ResultsProvider` にのみ依存し、フィルタリングロジックはここに持たない
@@ -15,12 +14,10 @@ final class PickerViewController: NSViewController {
 
     /// 編集モード中は `PickerPanelController` 側でフォーカス喪失による自動クローズを止めるため、
     /// 外から読めるようにする。
-    private(set) var isEditingInNvim = false
-    private var nvimSession: NvimEditSession?
-    /// nvim 編集用のターミナルビュー。セッションごとに生成・破棄し、使い回さない。
-    /// 前回の描画内容やプロセス状態（スクロールバック・カーソル位置・終了済みプロセスの残骸等）を
-    /// 持ち越さないため。
-    private var terminalView: LocalProcessTerminalView?
+    var isEditingInNvim: Bool { nvimEditController.isEditing }
+    /// nvim 編集モードのライフサイクルを担う（Issue 0006 / 0007）。`previewBox` が
+    /// `loadView()` を待たずに init 時点で生成済みのため lazy で保持できる。
+    private lazy var nvimEditController = NvimEditModeController(container: previewBox)
 
     private let resultsProvider: ResultsProvider
     private let settings: Settings
@@ -65,6 +62,21 @@ final class PickerViewController: NSViewController {
         self.settings = settings
         self.historyStore = historyStore
         super.init(nibName: nil, bundle: nil)
+
+        nvimEditController.onEditingChanged = { [weak self] editing in
+            guard let self else { return }
+            self.setEditingLayout(editing)
+            if !editing {
+                self.updatePreview()
+                self.view.window?.makeFirstResponder(self.searchField)
+            }
+        }
+        nvimEditController.onCommit = { [weak self] text in
+            self?.onCommitEditedText?(text)
+        }
+        nvimEditController.onDiscard = { [weak self] in
+            self?.onCancel?()
+        }
     }
 
     @available(*, unavailable)
@@ -212,7 +224,7 @@ final class PickerViewController: NSViewController {
     /// 最新の結果を再取得して最終行（最新のアイテム）を選択したうえで、検索フィールドへ入力フォーカスを移す。
     func willShow() {
         // パネルが何らかの理由で編集モードのまま再表示された場合に備えた保険（Issue 0006）。
-        if isEditingInNvim { finishNvimEdit(commitEditedText: false) }
+        nvimEditController.finish(commit: false)
         searchField.stringValue = ""
         reloadDebounceTimer?.invalidate()
         reloadDebounceTimer = nil
@@ -356,12 +368,12 @@ final class PickerViewController: NSViewController {
             // Esc は nvim 側が（ノーマルモード復帰等に）使うため確定には使えない。
             // そのため確定は ⌘↩ に割り当てる。編集モードでなければ通常の確定（Enter）に譲る。
             guard isEditingInNvim else { return false }
-            finishNvimEdit(commitEditedText: true)
+            nvimEditController.finish(commit: true)
             return true
         case ".":
             // Esc が使えない都合上、破棄も ⌘. に割り当てる。
             guard isEditingInNvim else { return false }
-            finishNvimEdit(commitEditedText: false)
+            nvimEditController.finish(commit: false)
             return true
         default:
             return false
@@ -399,102 +411,7 @@ final class PickerViewController: NSViewController {
             return
         }
 
-        let session: NvimEditSession
-        do {
-            session = try NvimEditSession(text: text)
-        } catch {
-            NSLog("ClipHistory: NvimEditSession(text:) failed: \(error)")
-            NSSound.beep()
-            return
-        }
-        nvimSession = session
-
-        let terminal = LocalProcessTerminalView(frame: previewBox.bounds)
-        terminal.translatesAutoresizingMaskIntoConstraints = false
-        terminal.configureNativeColors()
-        // プレビューと同じ等幅フォントに揃える。
-        terminal.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-        terminal.processDelegate = self
-        previewBox.addSubview(terminal)
-        NSLayoutConstraint.activate([
-            terminal.topAnchor.constraint(equalTo: previewBox.topAnchor, constant: 1),
-            terminal.leadingAnchor.constraint(equalTo: previewBox.leadingAnchor, constant: 1),
-            terminal.trailingAnchor.constraint(equalTo: previewBox.trailingAnchor, constant: -1),
-            terminal.bottomAnchor.constraint(equalTo: previewBox.bottomAnchor, constant: -1)
-        ])
-        terminalView = terminal
-
-        // プレビュー幅45%（約300pt）は nvim には狭すぎるため、編集中は全幅に広げる。
-        setEditingLayout(true)
-
-        terminal.startProcess(executable: session.launchExecutable, args: session.launchArguments)
-        isEditingInNvim = true
-        // 以降の全キー入力を nvim（ターミナルビュー）に流す。
-        view.window?.makeFirstResponder(terminal)
-    }
-
-    /// nvim 編集モードを終了する（Issue 0006）。
-    /// - Parameter commitEditedText: `true` の場合のみ編集結果を読み戻して確定する。
-    private func finishNvimEdit(commitEditedText: Bool) {
-        guard isEditingInNvim else { return }
-
-        var editedText: String?
-        if commitEditedText {
-            do {
-                editedText = try nvimSession?.readEditedText()
-            } catch {
-                // 読み戻しに失敗しても、編集モードは終了させたうえで確定はしない。
-                NSLog("ClipHistory: NvimEditSession.readEditedText() failed: \(error)")
-                NSSound.beep()
-            }
-        }
-
-        tearDownNvimEdit()
-
-        // onCommitEditedText はパネルを閉じるコールバックのため、後片付けが全て終わった後に呼ぶ。
-        if let editedText {
-            onCommitEditedText?(editedText)
-        }
-    }
-
-    /// nvim 編集モードの後片付けを行う（Issue 0007）。
-    /// nvim セッションの終了・破棄、ターミナルビューの取り外し、レイアウトの復元をまとめる。
-    /// `finishNvimEdit(commitEditedText:)` と `handleNvimTermination()` の双方から共通で呼ばれる。
-    private func tearDownNvimEdit() {
-        nvimSession?.requestQuit()
-        nvimSession?.cleanUp()
-        nvimSession = nil
-
-        terminalView?.removeFromSuperview()
-        terminalView = nil
-
-        isEditingInNvim = false
-        setEditingLayout(false)
-        updatePreview()
-        view.window?.makeFirstResponder(searchField)
-    }
-
-    /// nvim プロセスの終了を受けて編集モードを終える（Issue 0007）。
-    /// nvim を終了したらパネルを閉じる。保存されていればクリップボードへ書き戻し、
-    /// 保存されていなければ何もしない。
-    private func handleNvimTermination() {
-        guard isEditingInNvim else { return }
-
-        var savedText: String?
-        do {
-            savedText = try nvimSession?.savedText()
-        } catch {
-            NSLog("ClipHistory: NvimEditSession.savedText() failed: \(error)")
-            savedText = nil
-        }
-
-        tearDownNvimEdit()
-
-        if let savedText {
-            onCommitEditedText?(savedText)
-        } else {
-            onCancel?()
-        }
+        nvimEditController.begin(text: text)
     }
 
     /// 通常レイアウトと nvim 編集用の全幅レイアウトを切り替える（Issue 0006）。
@@ -587,23 +504,4 @@ extension PickerViewController: NSSearchFieldDelegate {
             return false
         }
     }
-}
-
-extension PickerViewController: LocalProcessTerminalViewDelegate {
-    /// ユーザーが nvim 内で `:q` した場合の経路。SwiftTerm から呼ばれるスレッドが
-    /// 保証されないため、後片付け（メインスレッド専用の AppKit 操作を含む）は
-    /// `DispatchQueue.main.async` 経由でメインスレッドに乗せて行う。
-    /// nvim を終了したらパネルを閉じる。保存されていればクリップボードへ書き戻し、
-    /// 保存されていなければ何もしない（Issue 0007）。
-    func processTerminated(source: TerminalView, exitCode: Int32?) {
-        DispatchQueue.main.async { [weak self] in
-            self?.handleNvimTermination()
-        }
-    }
-
-    // プロトコル要求のための空実装。パネル内埋め込みでウィンドウタイトルや
-    // カレントディレクトリ表示、サイズ変更通知を使う予定はない。
-    func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
-    func setTerminalTitle(source: LocalProcessTerminalView, title: String) {}
-    func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
 }
