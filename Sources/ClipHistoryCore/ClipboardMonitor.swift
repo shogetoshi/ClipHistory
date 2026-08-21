@@ -55,6 +55,16 @@ public final class ClipboardMonitor {
         handleChange()
     }
 
+    /// クリップボードから取り込む1件分の素材。テキスト・画像の違いをここで吸収し、
+    /// 以降の登録処理（ハッシュ算出・重複判定・レコード組み立て）を1本化する。
+    private struct Capture {
+        let kind: ItemKind
+        let uti: String
+        let data: Data
+        let previewText: String
+        let searchKey: String
+    }
+
     private func handleChange() {
         let typeStrings = (pasteboard.types ?? []).map(\.rawValue)
 
@@ -69,71 +79,67 @@ public final class ClipboardMonitor {
             return
         }
 
-        // テキスト優先: リッチテキストのコピーはテキストと画像表現を同時に持つことがあり、
-        // その場合はテキストとして扱いたいため、使えるテキストがあれば画像判定より先に処理する。
-        if let text = pasteboard.string(forType: .string),
-           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let data = Data(text.utf8)
+        guard let capture = capturedContent() else { return }
 
-            // 過大なテキストはスキップ（設定可能、既定5MB）
-            if data.count > settings.maxTextBytes { return }
-
-            let hash = sha256Hex(data)
-            if isSameAsLatest(hash: hash) { return }
-            let searchKey = Normalizer.normalize(text)
-            let previewText = String(text.prefix(200))
-
-            // コピー元アプリは検出時点の frontmostApplication（近似値。設計書 5.2）
-            let frontApp = NSWorkspace.shared.frontmostApplication
-
-            let newItem = HistoryStore.NewItem(
-                createdAt: Int64(Date().timeIntervalSince1970 * 1000),
-                kind: .text,
-                previewText: previewText,
-                searchKey: searchKey,
-                contentHash: hash,
-                sourceAppBundleID: frontApp?.bundleIdentifier,
-                sourceAppName: frontApp?.localizedName,
-                representations: [
-                    HistoryStore.NewRepresentation(uti: PasteboardTextType.utf8PlainText, data: data)
-                ]
-            )
-
-            insert(newItem, searchKey: searchKey)
-            return
-        }
-
-        // テキストが使えない場合に限り、画像として取り込む
-        guard let (uti, data) = PasteboardImageType.orderedUTIs.lazy.compactMap({ uti -> (String, Data)? in
-            guard let data = self.pasteboard.data(forType: NSPasteboard.PasteboardType(uti)), !data.isEmpty else { return nil }
-            return (uti, data)
-        }).first else { return }
-
-        // 過大な画像はスキップ（設定可能、既定20MB）
-        if data.count > settings.maxImageBytes { return }
-
-        let hash = sha256Hex(data)
+        let hash = sha256Hex(capture.data)
         if isSameAsLatest(hash: hash) { return }
-        let previewText = imagePreviewText(uti: uti, data: data)
-        let searchKey = Normalizer.normalize(previewText)
 
         // コピー元アプリは検出時点の frontmostApplication（近似値。設計書 5.2）
         let frontApp = NSWorkspace.shared.frontmostApplication
 
         let newItem = HistoryStore.NewItem(
             createdAt: Int64(Date().timeIntervalSince1970 * 1000),
-            kind: .image,
-            previewText: previewText,
-            searchKey: searchKey,
+            kind: capture.kind,
+            previewText: capture.previewText,
+            searchKey: capture.searchKey,
             contentHash: hash,
             sourceAppBundleID: frontApp?.bundleIdentifier,
             sourceAppName: frontApp?.localizedName,
             representations: [
-                HistoryStore.NewRepresentation(uti: uti, data: data)
+                HistoryStore.NewRepresentation(uti: capture.uti, data: capture.data)
             ]
         )
 
-        insert(newItem, searchKey: searchKey)
+        insert(newItem, searchKey: capture.searchKey)
+    }
+
+    /// テキスト優先: リッチテキストのコピーはテキストと画像表現を同時に持つことがあり、
+    /// その場合はテキストとして扱いたいため、使えるテキストがあれば画像判定より先に処理する。
+    /// なお、テキストが過大サイズでスキップされる場合も画像へはフォールバックしない（現在の挙動を維持）。
+    private func capturedContent() -> Capture? {
+        if let text = pasteboard.string(forType: .string),
+           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let data = Data(text.utf8)
+
+            // 過大なテキストはスキップ（設定可能、既定5MB）
+            guard data.count <= settings.maxTextBytes else { return nil }
+
+            return Capture(
+                kind: .text,
+                uti: PasteboardTextType.utf8PlainText,
+                data: data,
+                previewText: String(text.prefix(200)),
+                searchKey: Normalizer.normalize(text)
+            )
+        }
+
+        // テキストが使えない場合に限り、画像として取り込む
+        guard let (uti, data) = PasteboardImageType.orderedUTIs.lazy.compactMap({ uti -> (String, Data)? in
+            guard let data = self.pasteboard.data(forType: NSPasteboard.PasteboardType(uti)), !data.isEmpty else { return nil }
+            return (uti, data)
+        }).first else { return nil }
+
+        // 過大な画像はスキップ（設定可能、既定20MB）
+        guard data.count <= settings.maxImageBytes else { return nil }
+
+        let previewText = imagePreviewText(uti: uti, data: data)
+        return Capture(
+            kind: .image,
+            uti: uti,
+            data: data,
+            previewText: previewText,
+            searchKey: Normalizer.normalize(previewText)
+        )
     }
 
     /// 直前（最新）のレコードと同一内容かどうかを判定する。
@@ -153,13 +159,7 @@ public final class ClipboardMonitor {
 
     /// 一覧行に表示する説明テキストを組み立てる。フォーマット名と、取得できればピクセルサイズを付す。
     private func imagePreviewText(uti: String, data: Data) -> String {
-        let formatName: String
-        switch uti {
-        case "public.png": formatName = "PNG"
-        case "public.jpeg": formatName = "JPEG"
-        case "public.tiff": formatName = "TIFF"
-        default: formatName = uti
-        }
+        let formatName = PasteboardImageType.displayName(for: uti)
 
         // Retina スクリーンショットでは NSImage.size（pt）が実寸と食い違うため、
         // NSBitmapImageRep のピクセルサイズを優先して使う。

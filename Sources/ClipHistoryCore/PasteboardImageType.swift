@@ -5,4 +5,14 @@ import Foundation
 /// （プレビュー用の読み出し時）の双方がこの定義を参照する。
 public enum PasteboardImageType {
     public static let orderedUTIs: [String] = ["public.png", "public.jpeg", "public.tiff"]
+
+    /// 一覧・プレビューに出す表示用のフォーマット名。未知の UTI はそのまま返す。
+    public static func displayName(for uti: String) -> String {
+        switch uti {
+        case "public.png": return "PNG"
+        case "public.jpeg": return "JPEG"
+        case "public.tiff": return "TIFF"
+        default: return uti
+        }
+    }
 }
