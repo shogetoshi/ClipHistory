@@ -1,12 +1,9 @@
 import Foundation
 
-/// `items.kind` の取り得る値。v1 のこのフェーズで実際に生成するのは `.text` のみだが、
-/// スキーマ・API は設計書のとおり多型対応の形にしておく。
+/// `items.kind` の取り得る値。保存対象はプレーンテキストと画像のみ（設計書 13.4）。
 public enum ItemKind: String {
     case text
     case image
-    case file
-    case rtf
 }
 
 /// 1件の履歴（= 1回のコピー）
@@ -152,17 +149,16 @@ public final class HistoryStore {
     }
 
     /// 最新順（created_at DESC）で items を取得する
-    public func fetchRecent(limit: Int, offset: Int = 0) throws -> [HistoryItem] {
+    public func fetchRecent(limit: Int) throws -> [HistoryItem] {
         let stmt = try db.prepare("""
         SELECT id, created_at, kind, preview_text, search_key, content_hash, byte_size,
                source_app_bundle_id, source_app_name, pinned
         FROM items
         -- 同一ミリ秒のコピーが複数あり得るため id をタイブレーカにする（順序の安定＋ページング漏れ防止）
         ORDER BY created_at DESC, id DESC
-        LIMIT ? OFFSET ?;
+        LIMIT ?;
         """)
         try stmt.bind(1, Int64(limit))
-        try stmt.bind(2, Int64(offset))
 
         var results: [HistoryItem] = []
         while try stmt.step() {
@@ -234,12 +230,7 @@ public final class HistoryStore {
     /// - Returns: `public.utf8-plain-text` の表現が無い場合、または UTF-8 として解釈できない
     ///   場合は `nil`。改行・タブ・空白などは一切加工しない。
     public func loadPreviewText(itemID: Int64, maxCharacters: Int) throws -> String? {
-        let representations = try fetchRepresentations(itemID: itemID)
-        guard let textRepresentation = representations.first(where: { $0.uti == "public.utf8-plain-text" }) else {
-            return nil
-        }
-        let data = try loadData(for: textRepresentation)
-        guard let text = String(data: data, encoding: .utf8) else {
+        guard let text = try loadText(itemID: itemID) else {
             return nil
         }
         if text.count > maxCharacters {
@@ -255,15 +246,21 @@ public final class HistoryStore {
     /// - Returns: `public.utf8-plain-text` の表現が無い場合、または UTF-8 として解釈できない
     ///   場合は `nil`。
     public func loadFullText(itemID: Int64) throws -> String? {
+        try loadText(itemID: itemID)
+    }
+
+    /// `representations` から `PasteboardTextType.utf8PlainText` の表現を探して読み出し、
+    /// UTF-8 として解釈する。`loadPreviewText` と `loadFullText` の共通処理。
+    ///
+    /// - Parameter itemID: 対象の item id
+    /// - Returns: 対象の表現が無い場合、または UTF-8 として解釈できない場合は `nil`。
+    private func loadText(itemID: Int64) throws -> String? {
         let representations = try fetchRepresentations(itemID: itemID)
-        guard let textRepresentation = representations.first(where: { $0.uti == "public.utf8-plain-text" }) else {
+        guard let textRepresentation = representations.first(where: { $0.uti == PasteboardTextType.utf8PlainText }) else {
             return nil
         }
         let data = try loadData(for: textRepresentation)
-        guard let text = String(data: data, encoding: .utf8) else {
-            return nil
-        }
-        return text
+        return String(data: data, encoding: .utf8)
     }
 
     /// プレビューペインに画像を表示するために使う。`loadPreviewText` と対になるメソッド。

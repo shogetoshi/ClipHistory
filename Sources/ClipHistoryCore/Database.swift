@@ -102,11 +102,6 @@ public final class Statement {
         guard rc == SQLITE_OK else { throw DatabaseError.bindFailed(errorMessage) }
     }
 
-    public func bind(_ index: Int32, _ value: Double) throws {
-        let rc = sqlite3_bind_double(stmt, index, value)
-        guard rc == SQLITE_OK else { throw DatabaseError.bindFailed(errorMessage) }
-    }
-
     public func bind(_ index: Int32, _ value: String) throws {
         let rc = sqlite3_bind_text(stmt, index, value, -1, sqliteTransient)
         guard rc == SQLITE_OK else { throw DatabaseError.bindFailed(errorMessage) }
@@ -133,12 +128,6 @@ public final class Statement {
         throw DatabaseError.stepFailed(errorMessage)
     }
 
-    /// 再実行のためにリセットする（バインド値もクリアする）
-    public func reset() throws {
-        sqlite3_reset(stmt)
-        sqlite3_clear_bindings(stmt)
-    }
-
     public func columnInt64(_ index: Int32) -> Int64 {
         sqlite3_column_int64(stmt, index)
     }
@@ -154,9 +143,5 @@ public final class Statement {
         let count = sqlite3_column_bytes(stmt, index)
         guard count > 0, let bytes = sqlite3_column_blob(stmt, index) else { return Data() }
         return Data(bytes: bytes, count: Int(count))
-    }
-
-    public func isNull(_ index: Int32) -> Bool {
-        sqlite3_column_type(stmt, index) == SQLITE_NULL
     }
 }

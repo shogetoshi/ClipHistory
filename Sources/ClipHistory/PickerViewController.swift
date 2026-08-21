@@ -1,10 +1,10 @@
 import Cocoa
 import ClipHistoryCore
-import SwiftTerm
 
-/// 検索フィールドと結果一覧（`NSTableView`）の描画を担う（設計書 3.1 / 7.1）。
-/// 実データの取得は `ResultsProvider` にのみ依存し、フィルタリングロジックはここに持たない
-/// （フェーズ3の `SearchIndex` に差し替えるための継ぎ目）。
+/// 検索フィールドと結果一覧（`NSTableView`）の描画・キー操作の受け付けを担う（設計書 3.1 / 7.1）。
+/// ビュー以外の責務は分けてある。一覧の状態と検索は `PickerViewModel`、プレビューの表示は
+/// `PreviewPaneView` と `PreviewContentLoader`、nvim 編集モードは `NvimEditModeController`。
+/// 絞り込みロジックは `ResultsProvider` の向こう側にあり、ここには持たない（設計書 13.2）。
 final class PickerViewController: NSViewController {
     /// 確定時に選択項目を渡すコールバック。クリップボードへの書き戻しは呼び出し元が行う。
     var onCommit: ((HistoryItem) -> Void)?
@@ -15,56 +15,57 @@ final class PickerViewController: NSViewController {
 
     /// 編集モード中は `PickerPanelController` 側でフォーカス喪失による自動クローズを止めるため、
     /// 外から読めるようにする。
-    private(set) var isEditingInNvim = false
-    private var nvimSession: NvimEditSession?
-    /// nvim 編集用のターミナルビュー。セッションごとに生成・破棄し、使い回さない。
-    /// 前回の描画内容やプロセス状態（スクロールバック・カーソル位置・終了済みプロセスの残骸等）を
-    /// 持ち越さないため。
-    private var terminalView: LocalProcessTerminalView?
+    var isEditingInNvim: Bool { nvimEditController.isEditing }
+    /// nvim 編集モードのライフサイクルを担う（Issue 0006 / 0007）。`previewPane` が
+    /// `loadView()` を待たずに init 時点で生成済みのため lazy で保持できる。
+    private lazy var nvimEditController = NvimEditModeController(container: previewPane)
 
-    private let resultsProvider: ResultsProvider
-    private let settings: Settings
     private let historyStore: HistoryStore
+    private let previewContentLoader: PreviewContentLoader
+    private let viewModel: PickerViewModel
 
     private let searchField = NSSearchField()
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
     // プレビューペイン（Issue 0002）。一覧の右側に選択中アイテムの本文を表示する。
-    private let previewBox = NSBox()
-    private let previewScrollView = NSScrollView()
-    private let previewTextView = NSTextView()
-    // 画像プレビュー用（Issue 0004）。テキストと排他的に previewBox 内に表示する。
-    private let previewImageView = NSImageView()
+    private let previewPane = PreviewPaneView()
     /// プレビューとして読み込む最大文字数。一覧より大きく取り、長文もある程度確認できるようにする。
     private static let previewMaxCharacters = 4000
 
-    // 編集モードでのレイアウト差し替え用（Issue 0006）。通常時は previewBox を一覧の右45%に
+    // 編集モードでのレイアウト差し替え用（Issue 0006）。通常時は previewPane を一覧の右45%に
     // 配置するが、nvim 編集中は全幅に広げる必要があるため、対象の制約をアクティブ/非アクティブ
     // 切り替えできるようストアドプロパティとして保持する。
     private var previewLeadingNormalConstraint: NSLayoutConstraint!
     private var previewWidthConstraint: NSLayoutConstraint!
     private var previewLeadingFullWidthConstraint: NSLayoutConstraint!
 
-    private var items: [HistoryItem] = []
-    /// 打鍵ごとの `reload()` 実行を抑えるデバウンス用タイマー（設計書6.5、40ms）。
-    /// 検索自体はメインスレッド同期実行のままだが、これにより高速な連続入力時の
-    /// 実行回数そのものを減らす（指揮官指示）。
-    private var reloadDebounceTimer: Timer?
-    private static let reloadDebounceInterval: TimeInterval = 0.04
-    private let relativeFormatter: RelativeDateTimeFormatter = {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter
-    }()
-
     private static let cellIdentifier = NSUserInterfaceItemIdentifier("HistoryItemCell")
     private static let columnIdentifier = NSUserInterfaceItemIdentifier("HistoryItemColumn")
 
     init(resultsProvider: ResultsProvider, settings: Settings, historyStore: HistoryStore) {
-        self.resultsProvider = resultsProvider
-        self.settings = settings
         self.historyStore = historyStore
+        self.previewContentLoader = PreviewContentLoader(historyStore: historyStore, maxCharacters: Self.previewMaxCharacters)
+        self.viewModel = PickerViewModel(resultsProvider: resultsProvider, settings: settings)
         super.init(nibName: nil, bundle: nil)
+
+        viewModel.onItemsChanged = { [weak self] in
+            self?.applyItems()
+        }
+
+        nvimEditController.onEditingChanged = { [weak self] editing in
+            guard let self else { return }
+            self.setEditingLayout(editing)
+            if !editing {
+                self.updatePreview()
+                self.view.window?.makeFirstResponder(self.searchField)
+            }
+        }
+        nvimEditController.onCommit = { [weak self] text in
+            self?.onCommitEditedText?(text)
+        }
+        nvimEditController.onDiscard = { [weak self] in
+            self?.onCancel?()
+        }
     }
 
     @available(*, unavailable)
@@ -118,50 +119,16 @@ final class PickerViewController: NSViewController {
         // プレビューは一覧の右側に並べる（Issue 0002）。上下分割にすると、ただでさえ
         // 高さの限られたパネル内で一覧の可視行数が半分になってしまい選択操作がしづらくなるため、
         // 横方向に並べて一覧の縦の見え方はそのまま保つ。
-        previewTextView.isEditable = false
-        previewTextView.isSelectable = true
-        previewTextView.drawsBackground = false
-        previewTextView.textContainerInset = NSSize(width: 4, height: 4)
-        // 等幅フォントにする。コピーしたコードや設定ファイルなどを崩さず、
-        // インデントや桁位置が意図通りに見えるようにするため。
-        previewTextView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-        previewTextView.isVerticallyResizable = true
-        previewTextView.isHorizontallyResizable = false
-        previewTextView.autoresizingMask = [.width]
-        previewTextView.textContainer?.widthTracksTextView = true
-        previewTextView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
-
-        previewScrollView.translatesAutoresizingMaskIntoConstraints = false
-        previewScrollView.documentView = previewTextView
-        previewScrollView.hasVerticalScroller = true
-        previewScrollView.drawsBackground = false
-        previewScrollView.autohidesScrollers = true
-
-        previewBox.translatesAutoresizingMaskIntoConstraints = false
-        previewBox.boxType = .custom
-        previewBox.fillColor = .textBackgroundColor
-        previewBox.borderColor = .separatorColor
-        previewBox.cornerRadius = 6
-        previewBox.titlePosition = .noTitle
-        previewBox.addSubview(previewScrollView)
-
-        // 画像プレビュー（Issue 0004）。previewScrollView と同じ領域に重ねて配置し、
-        // 表示時はテキスト側を隠すことで排他的に切り替える。
-        previewImageView.translatesAutoresizingMaskIntoConstraints = false
-        previewImageView.imageScaling = .scaleProportionallyUpOrDown
-        previewImageView.imageAlignment = .alignCenter
-        previewImageView.isHidden = true
-        previewBox.addSubview(previewImageView)
-
-        root.addSubview(previewBox)
+        previewPane.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(previewPane)
 
         // 一覧55% / プレビュー45%。中央に12ptの間隔を空け、比率は multiplier で表現する。
-        // 編集モード（Issue 0006）では previewBox を全幅に広げるため、切り替え対象の2制約は
+        // 編集モード（Issue 0006）では previewPane を全幅に広げるため、切り替え対象の2制約は
         // ストアドプロパティとして保持し、後から isActive を切り替えられるようにする。
-        previewLeadingNormalConstraint = previewBox.leadingAnchor.constraint(equalTo: scrollView.trailingAnchor, constant: 12)
-        previewWidthConstraint = previewBox.widthAnchor.constraint(equalTo: scrollView.widthAnchor, multiplier: 45.0 / 55.0)
+        previewLeadingNormalConstraint = previewPane.leadingAnchor.constraint(equalTo: scrollView.trailingAnchor, constant: 12)
+        previewWidthConstraint = previewPane.widthAnchor.constraint(equalTo: scrollView.widthAnchor, multiplier: 45.0 / 55.0)
         // 編集モード用の全幅レイアウト。初期状態では使わないため非アクティブのまま保持する。
-        previewLeadingFullWidthConstraint = previewBox.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16)
+        previewLeadingFullWidthConstraint = previewPane.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16)
 
         // contentViewController を持つウィンドウは Auto Layout 上でウィンドウサイズ自体が
         // 変数になっており、「現在のサイズに留まろうとする」制約の優先度は
@@ -171,7 +138,7 @@ final class PickerViewController: NSViewController {
         // これを防ぐため、押し広げの起点となるビューの圧縮抵抗をwindowSizeStayPutより低い
         // .defaultLowに下げる。あわせて、内容が小さいときにウィンドウを縮める方向へ
         // 引っ張らないよう content hugging priority も.defaultLowに下げる（Issue 0009）。
-        for view in [scrollView, previewScrollView, previewTextView, previewImageView, previewBox] as [NSView] {
+        for view in [scrollView, previewPane] as [NSView] {
             view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             view.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
             view.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -188,21 +155,11 @@ final class PickerViewController: NSViewController {
             scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16),
             scrollView.bottomAnchor.constraint(equalTo: searchField.topAnchor, constant: -12),
 
-            previewBox.topAnchor.constraint(equalTo: root.topAnchor, constant: 16),
+            previewPane.topAnchor.constraint(equalTo: root.topAnchor, constant: 16),
             previewLeadingNormalConstraint,
-            previewBox.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -16),
-            previewBox.bottomAnchor.constraint(equalTo: searchField.topAnchor, constant: -12),
-            previewWidthConstraint,
-
-            previewScrollView.topAnchor.constraint(equalTo: previewBox.topAnchor, constant: 1),
-            previewScrollView.leadingAnchor.constraint(equalTo: previewBox.leadingAnchor, constant: 1),
-            previewScrollView.trailingAnchor.constraint(equalTo: previewBox.trailingAnchor, constant: -1),
-            previewScrollView.bottomAnchor.constraint(equalTo: previewBox.bottomAnchor, constant: -1),
-
-            previewImageView.topAnchor.constraint(equalTo: previewBox.topAnchor, constant: 1),
-            previewImageView.leadingAnchor.constraint(equalTo: previewBox.leadingAnchor, constant: 1),
-            previewImageView.trailingAnchor.constraint(equalTo: previewBox.trailingAnchor, constant: -1),
-            previewImageView.bottomAnchor.constraint(equalTo: previewBox.bottomAnchor, constant: -1)
+            previewPane.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -16),
+            previewPane.bottomAnchor.constraint(equalTo: searchField.topAnchor, constant: -12),
+            previewWidthConstraint
         ])
 
         view = root
@@ -212,39 +169,19 @@ final class PickerViewController: NSViewController {
     /// 最新の結果を再取得して最終行（最新のアイテム）を選択したうえで、検索フィールドへ入力フォーカスを移す。
     func willShow() {
         // パネルが何らかの理由で編集モードのまま再表示された場合に備えた保険（Issue 0006）。
-        if isEditingInNvim { finishNvimEdit(commitEditedText: false) }
+        nvimEditController.finish(commit: false)
         searchField.stringValue = ""
-        reloadDebounceTimer?.invalidate()
-        reloadDebounceTimer = nil
-        reload()
+        viewModel.cancelPendingReload()
+        viewModel.reload(query: "")
         view.window?.makeFirstResponder(searchField)
     }
 
-    /// 打鍵のたびに呼ばれる。直前のタイマーを破棄して再スケジュールすることで、
-    /// 連続入力中は最後の1回だけが実際に `reload()` を実行する（設計書6.5、40msデバウンス）。
-    private func scheduleReload() {
-        reloadDebounceTimer?.invalidate()
-        reloadDebounceTimer = Timer.scheduledTimer(withTimeInterval: Self.reloadDebounceInterval, repeats: false) { [weak self] _ in
-            self?.reload()
-        }
-    }
-
-    private func reload() {
-        let query = searchField.stringValue
-        do {
-            // resultLimit は毎回 Settings から読み直す（設定画面での変更が次回の読み出しで
-            // 反映されるようにするため。フェーズ4指示）。
-            // プロバイダは最新順（先頭が最上位）で返すが、履歴なので最新を下に置きたいため
-            // ここで反転する（Issue 0003）。
-            items = Array(try resultsProvider.results(for: query, limit: settings.resultLimit).reversed())
-        } catch {
-            items = []
-            NSLog("ClipHistory: ResultsProvider.results(for:) failed: \(error)")
-        }
+    /// 結果が入れ替わったときに一覧の表示・選択・プレビューを追従させる。
+    private func applyItems() {
         tableView.reloadData()
-        if !items.isEmpty {
+        if viewModel.count > 0 {
             // 反転後は最終行が最新のアイテムになるため、最終行を選択する（Issue 0003）。
-            let lastRow = items.count - 1
+            let lastRow = viewModel.count - 1
             tableView.selectRowIndexes(IndexSet(integer: lastRow), byExtendingSelection: false)
             tableView.scrollRowToVisible(lastRow)
         }
@@ -255,68 +192,25 @@ final class PickerViewController: NSViewController {
     }
 
     /// 選択中アイテムのプレビュー本文を更新する。
-    /// 一覧側の `previewText` は表示用に改行・連続空白を畳んで1行・200文字程度に短縮した値だが、
-    /// プレビューでは改行を含む実データをそのまま見せたいため、ここでは一覧用の値を使わず
-    /// `historyStore.loadPreviewText` で `public.utf8-plain-text` の実データを読み直す。
     private func updatePreview() {
-        let row = tableView.selectedRow
-        guard !items.isEmpty, row >= 0, row < items.count else {
-            previewTextView.string = ""
-            showPreviewImage(nil)
+        guard let item = viewModel.item(at: tableView.selectedRow) else {
+            previewPane.show(.empty)
             return
         }
-        let item = items[row]
-
-        // 画像アイテムの場合は画像を優先して表示する。取得・生成に失敗した場合は
-        // テキストプレビューにフォールバックする（Issue 0004）。
-        if item.kind == .image {
-            do {
-                if let loaded = try historyStore.loadPreviewImageData(itemID: item.id), let image = NSImage(data: loaded.data) {
-                    showPreviewImage(image)
-                    return
-                }
-            } catch {
-                NSLog("ClipHistory: HistoryStore.loadPreviewImageData(itemID:) failed: \(error)")
-            }
-        }
-
-        let text: String
-        do {
-            if let loaded = try historyStore.loadPreviewText(itemID: item.id, maxCharacters: Self.previewMaxCharacters) {
-                text = loaded
-            } else {
-                // テキスト表現が無い（将来の画像などを想定）場合は、一覧と同じ情報を出す
-                text = item.previewText ?? ""
-            }
-        } catch {
-            text = ""
-            NSLog("ClipHistory: HistoryStore.loadPreviewText(itemID:) failed: \(error)")
-        }
-        previewTextView.string = text
-        previewTextView.scrollToBeginningOfDocument(nil)
-        showPreviewImage(nil)
-    }
-
-    /// プレビューの表示モードを切り替える。画像とテキストは同じ領域を共有するため、
-    /// 一方を表示する際は他方を隠して排他的に表示する（Issue 0004）。
-    private func showPreviewImage(_ image: NSImage?) {
-        previewImageView.image = image
-        previewImageView.isHidden = image == nil
-        previewScrollView.isHidden = image != nil
+        previewPane.show(previewContentLoader.content(for: item))
     }
 
     private func moveSelection(by delta: Int) {
-        guard !items.isEmpty else { return }
+        guard viewModel.count > 0 else { return }
         let current = tableView.selectedRow
-        let next = current < 0 ? 0 : min(max(current + delta, 0), items.count - 1)
+        let next = current < 0 ? 0 : min(max(current + delta, 0), viewModel.count - 1)
         tableView.selectRowIndexes(IndexSet(integer: next), byExtendingSelection: false)
         tableView.scrollRowToVisible(next)
     }
 
     private func commitSelection() {
-        let row = tableView.selectedRow
-        guard row >= 0, row < items.count else { return }
-        onCommit?(items[row])
+        guard let item = viewModel.item(at: tableView.selectedRow) else { return }
+        onCommit?(item)
     }
 
     @objc private func handleDoubleClick() {
@@ -356,12 +250,12 @@ final class PickerViewController: NSViewController {
             // Esc は nvim 側が（ノーマルモード復帰等に）使うため確定には使えない。
             // そのため確定は ⌘↩ に割り当てる。編集モードでなければ通常の確定（Enter）に譲る。
             guard isEditingInNvim else { return false }
-            finishNvimEdit(commitEditedText: true)
+            nvimEditController.finish(commit: true)
             return true
         case ".":
             // Esc が使えない都合上、破棄も ⌘. に割り当てる。
             guard isEditingInNvim else { return false }
-            finishNvimEdit(commitEditedText: false)
+            nvimEditController.finish(commit: false)
             return true
         default:
             return false
@@ -372,12 +266,10 @@ final class PickerViewController: NSViewController {
     private func beginNvimEdit() {
         guard !isEditingInNvim else { return }
 
-        let row = tableView.selectedRow
-        guard row >= 0, row < items.count else {
+        guard let item = viewModel.item(at: tableView.selectedRow) else {
             NSSound.beep()
             return
         }
-        let item = items[row]
 
         // 画像アイテムはテキストとして編集できないため対象外とする。
         guard item.kind != .image else {
@@ -399,107 +291,12 @@ final class PickerViewController: NSViewController {
             return
         }
 
-        let session: NvimEditSession
-        do {
-            session = try NvimEditSession(text: text)
-        } catch {
-            NSLog("ClipHistory: NvimEditSession(text:) failed: \(error)")
-            NSSound.beep()
-            return
-        }
-        nvimSession = session
-
-        let terminal = LocalProcessTerminalView(frame: previewBox.bounds)
-        terminal.translatesAutoresizingMaskIntoConstraints = false
-        terminal.configureNativeColors()
-        // プレビューと同じ等幅フォントに揃える。
-        terminal.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-        terminal.processDelegate = self
-        previewBox.addSubview(terminal)
-        NSLayoutConstraint.activate([
-            terminal.topAnchor.constraint(equalTo: previewBox.topAnchor, constant: 1),
-            terminal.leadingAnchor.constraint(equalTo: previewBox.leadingAnchor, constant: 1),
-            terminal.trailingAnchor.constraint(equalTo: previewBox.trailingAnchor, constant: -1),
-            terminal.bottomAnchor.constraint(equalTo: previewBox.bottomAnchor, constant: -1)
-        ])
-        terminalView = terminal
-
-        // プレビュー幅45%（約300pt）は nvim には狭すぎるため、編集中は全幅に広げる。
-        setEditingLayout(true)
-
-        terminal.startProcess(executable: session.launchExecutable, args: session.launchArguments)
-        isEditingInNvim = true
-        // 以降の全キー入力を nvim（ターミナルビュー）に流す。
-        view.window?.makeFirstResponder(terminal)
-    }
-
-    /// nvim 編集モードを終了する（Issue 0006）。
-    /// - Parameter commitEditedText: `true` の場合のみ編集結果を読み戻して確定する。
-    private func finishNvimEdit(commitEditedText: Bool) {
-        guard isEditingInNvim else { return }
-
-        var editedText: String?
-        if commitEditedText {
-            do {
-                editedText = try nvimSession?.readEditedText()
-            } catch {
-                // 読み戻しに失敗しても、編集モードは終了させたうえで確定はしない。
-                NSLog("ClipHistory: NvimEditSession.readEditedText() failed: \(error)")
-                NSSound.beep()
-            }
-        }
-
-        tearDownNvimEdit()
-
-        // onCommitEditedText はパネルを閉じるコールバックのため、後片付けが全て終わった後に呼ぶ。
-        if let editedText {
-            onCommitEditedText?(editedText)
-        }
-    }
-
-    /// nvim 編集モードの後片付けを行う（Issue 0007）。
-    /// nvim セッションの終了・破棄、ターミナルビューの取り外し、レイアウトの復元をまとめる。
-    /// `finishNvimEdit(commitEditedText:)` と `handleNvimTermination()` の双方から共通で呼ばれる。
-    private func tearDownNvimEdit() {
-        nvimSession?.requestQuit()
-        nvimSession?.cleanUp()
-        nvimSession = nil
-
-        terminalView?.removeFromSuperview()
-        terminalView = nil
-
-        isEditingInNvim = false
-        setEditingLayout(false)
-        updatePreview()
-        view.window?.makeFirstResponder(searchField)
-    }
-
-    /// nvim プロセスの終了を受けて編集モードを終える（Issue 0007）。
-    /// nvim を終了したらパネルを閉じる。保存されていればクリップボードへ書き戻し、
-    /// 保存されていなければ何もしない。
-    private func handleNvimTermination() {
-        guard isEditingInNvim else { return }
-
-        var savedText: String?
-        do {
-            savedText = try nvimSession?.savedText()
-        } catch {
-            NSLog("ClipHistory: NvimEditSession.savedText() failed: \(error)")
-            savedText = nil
-        }
-
-        tearDownNvimEdit()
-
-        if let savedText {
-            onCommitEditedText?(savedText)
-        } else {
-            onCancel?()
-        }
+        nvimEditController.begin(text: text)
     }
 
     /// 通常レイアウトと nvim 編集用の全幅レイアウトを切り替える（Issue 0006）。
     /// プレビュー幅45%（約300pt）では nvim の編集領域として狭すぎるため、編集中は
-    /// 一覧を隠して previewBox を全幅に広げる。
+    /// 一覧を隠して previewPane を全幅に広げる。
     private func setEditingLayout(_ editing: Bool) {
         if editing {
             previewLeadingNormalConstraint.isActive = false
@@ -512,21 +309,19 @@ final class PickerViewController: NSViewController {
             previewWidthConstraint.isActive = true
             scrollView.isHidden = false
         }
-        // 編集中はテキスト・画像どちらのプレビューも隠し、ターミナルのみを表示する。
-        previewScrollView.isHidden = editing
-        previewImageView.isHidden = editing
+        previewPane.setContentHidden(editing)
     }
 }
 
 extension PickerViewController: NSTableViewDataSource {
     func numberOfRows(in tableView: NSTableView) -> Int {
-        items.count
+        viewModel.count
     }
 }
 
 extension PickerViewController: NSTableViewDelegate {
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        let item = items[row]
+        guard let display = viewModel.rowDisplay(at: row) else { return nil }
 
         let cell: HistoryItemCellView
         if let reused = tableView.makeView(withIdentifier: Self.cellIdentifier, owner: self) as? HistoryItemCellView {
@@ -536,17 +331,10 @@ extension PickerViewController: NSTableViewDelegate {
             cell.identifier = Self.cellIdentifier
         }
 
-        let relativeTime = relativeFormatter.localizedString(
-            for: Date(timeIntervalSince1970: Double(item.createdAt) / 1000),
-            relativeTo: Date()
-        )
-        // 一覧は表示専用の整形を通す（修正2）。DB の preview_text 自体は変更しない。
-        // 複数行のコピー内容がそのまま描画されると改行の数だけ行内を占め、行の見た目が
-        // 不揃いになるため、改行・タブ・連続空白を半角スペース1個へ畳んでから渡す。
         cell.configure(
-            preview: DisplayText.singleLine(item.previewText ?? ""),
-            sourceAppName: item.sourceAppName ?? "不明なアプリ",
-            relativeTime: relativeTime
+            preview: display.preview,
+            sourceAppName: display.sourceAppName,
+            relativeTime: display.relativeTime
         )
         return cell
     }
@@ -559,7 +347,7 @@ extension PickerViewController: NSTableViewDelegate {
 
 extension PickerViewController: NSSearchFieldDelegate {
     func controlTextDidChange(_ obj: Notification) {
-        scheduleReload()
+        viewModel.scheduleReload(query: searchField.stringValue)
     }
 
     /// 検索フィールドにフォーカスがある状態でも ↑↓ / Enter / Esc がテーブル側の操作として
@@ -587,23 +375,4 @@ extension PickerViewController: NSSearchFieldDelegate {
             return false
         }
     }
-}
-
-extension PickerViewController: LocalProcessTerminalViewDelegate {
-    /// ユーザーが nvim 内で `:q` した場合の経路。SwiftTerm から呼ばれるスレッドが
-    /// 保証されないため、後片付け（メインスレッド専用の AppKit 操作を含む）は
-    /// `DispatchQueue.main.async` 経由でメインスレッドに乗せて行う。
-    /// nvim を終了したらパネルを閉じる。保存されていればクリップボードへ書き戻し、
-    /// 保存されていなければ何もしない（Issue 0007）。
-    func processTerminated(source: TerminalView, exitCode: Int32?) {
-        DispatchQueue.main.async { [weak self] in
-            self?.handleNvimTermination()
-        }
-    }
-
-    // プロトコル要求のための空実装。パネル内埋め込みでウィンドウタイトルや
-    // カレントディレクトリ表示、サイズ変更通知を使う予定はない。
-    func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
-    func setTerminalTitle(source: LocalProcessTerminalView, title: String) {}
-    func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
 }

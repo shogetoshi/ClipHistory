@@ -1,24 +1,13 @@
 import Cocoa
 import ClipHistoryCore
 
-/// 起動・常駐設定、各コンポーネントの組み立てを行う。
+/// アプリのライフサイクルを担う。多重起動チェック、メニューバー（`StatusItemController`）と
+/// 各コンポーネント（`AppComponents`）の起動、設定ウィンドウの開閉、破壊的操作の確認、
+/// ホットキー登録結果のメニューへの反映だけを行い、コンポーネントの組み立て自体は持たない。
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var statusItem: NSStatusItem?
-    private var clipboardMonitor: ClipboardMonitor?
-    private var hotKeyManager: HotKeyManager?
-    private var pickerPanelController: PickerPanelController?
-    private var searchIndex: SearchIndex?
-    private var historyStore: HistoryStore?
-    private var maintenanceScheduler: MaintenanceScheduler?
+    private var statusItemController: StatusItemController?
+    private var components: AppComponents?
     private var settingsWindowController: SettingsWindowController?
-
-    // ホットキー登録失敗時に表示する状態通知用メニュー項目（不具合修正）。
-    // 通常時は非表示にしておき、失敗時のみ `isHidden = false` にして出す。
-    private var hotKeyErrorMenuItem: NSMenuItem?
-    private var reregisterHotKeyMenuItem: NSMenuItem?
-
-    private static let normalStatusTitle = "📋"
-    private static let hotKeyFailedStatusTitle = "⚠️"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 他の初期化より前に多重起動チェックを行う。詳細は checkForDuplicateInstance() 参照。
@@ -26,13 +15,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         setUpStatusItem()
-        setUpCore()
+        setUpComponents()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        clipboardMonitor?.stop()
-        hotKeyManager?.unregister()
-        maintenanceScheduler?.stop()
+        components?.stop()
     }
 
     /// 同一バンドル識別子の他インスタンスが既に起動していないか確認し、多重起動なら即終了する。
@@ -59,62 +46,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    /// メニューバー常駐アイコン。設計書 7.4 の4項目（履歴パネルを開く / 設定 / 履歴を全消去 / 終了）
-    /// に加え、ホットキー登録失敗時のみ表示する状態通知・再登録項目（不具合修正）を持つ。
     private func setUpStatusItem() {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        if let button = item.button {
-            button.title = Self.normalStatusTitle
-        }
-
-        let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "履歴パネルを開く", action: #selector(openPicker), keyEquivalent: ""))
-
-        // 選択不可（isEnabled = false）のエラー内容表示項目。通常時は isHidden = true。
-        let errorItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-        errorItem.isEnabled = false
-        errorItem.isHidden = true
-        menu.addItem(errorItem)
-        hotKeyErrorMenuItem = errorItem
-
-        let reregisterItem = NSMenuItem(
-            title: "ホットキーを再登録",
-            action: #selector(reregisterHotKey),
-            keyEquivalent: ""
-        )
-        reregisterItem.isHidden = true
-        menu.addItem(reregisterItem)
-        reregisterHotKeyMenuItem = reregisterItem
-
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "設定", action: #selector(openSettings), keyEquivalent: ","))
-        menu.addItem(NSMenuItem(title: "履歴を全消去", action: #selector(clearAllHistory), keyEquivalent: ""))
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "終了", action: #selector(quit), keyEquivalent: "q"))
-        for menuItem in menu.items {
-            menuItem.target = self
-        }
-        item.menu = menu
-
-        statusItem = item
+        let controller = StatusItemController()
+        controller.onOpenPicker = { [weak self] in self?.components?.togglePicker() }
+        controller.onOpenSettings = { [weak self] in self?.openSettings() }
+        controller.onClearAllHistory = { [weak self] in self?.clearAllHistory() }
+        controller.onReregisterHotKey = { [weak self] in self?.registerHotKey() }
+        controller.onQuit = { NSApp.terminate(nil) }
+        statusItemController = controller
     }
 
-    @objc private func quit() {
-        NSApp.terminate(nil)
-    }
-
-    @objc private func openPicker() {
-        pickerPanelController?.toggle()
+    private func setUpComponents() {
+        do {
+            let built = try AppComponents(settings: Settings.shared)
+            components = built
+            built.start()
+            registerHotKey()
+        } catch {
+            NSLog("ClipHistory: failed to initialize storage: \(error)")
+        }
     }
 
     /// 設定ウィンドウを開く。既に開いていれば新規作成せず前面化するだけにする（指示）。
-    @objc private func openSettings() {
+    private func openSettings() {
         if settingsWindowController == nil {
             settingsWindowController = SettingsWindowController(settings: Settings.shared) { [weak self] in
                 // 監視間隔の変更だけは即座に反映する。ClipboardMonitorのタイマーを張り替える
                 // （他の設定項目は次回の読み出し時に反映されればよい。指示）。
-                self?.clipboardMonitor?.stop()
-                self?.clipboardMonitor?.start()
+                self?.components?.restartClipboardMonitor()
             }
         }
         NSApp.activate(ignoringOtherApps: true)
@@ -126,7 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// これは起動処理中ではなくユーザーがメニューから明示的に選んだ操作なので、
     /// `registerHotKey` のときとは異なりメインスレッドを同期的にブロックする
     /// `runModal()` を使って構わない（指示）。
-    @objc private func clearAllHistory() {
+    private func clearAllHistory() {
         let alert = NSAlert()
         alert.messageText = "履歴をすべて削除しますか？"
         alert.informativeText = "保存されているクリップボード履歴とファイルがすべて削除されます。この操作は取り消せません。"
@@ -139,89 +98,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         guard alert.runModal() == .alertSecondButtonReturn else { return }
 
-        guard let historyStore else { return }
         do {
-            // DB・BLOB・SearchIndex の3つすべてをクリアする（どれか1つでも残すと不整合になる）。
-            try historyStore.deleteAll()
-            searchIndex?.load([])
+            try components?.clearAllHistory()
         } catch {
             NSLog("ClipHistory: failed to clear all history: \(error)")
         }
-    }
-
-    /// DB・BlobStore・HistoryStore を組み立て、ClipboardMonitor を起動したうえで
-    /// ホットキー・パネルまわり（フェーズ2）を組み立てる。
-    private func setUpCore() {
-        do {
-            let dbURL = try AppPaths.databaseURL()
-            let db = try Database(path: dbURL.path)
-            try Migrations.migrate(db)
-
-            let blobsURL = try AppPaths.blobsDirectory()
-            let blobStore = try BlobStore(baseDirectory: blobsURL)
-
-            let settings = Settings.shared
-            let historyStore = HistoryStore(
-                db: db,
-                blobStore: blobStore,
-                inlineBlobThreshold: settings.inlineBlobThreshold
-            )
-            self.historyStore = historyStore
-
-            // 起動時にDBから検索インデックスを構築する（設計書6.1）。以降、新規コピーは
-            // DB再読み込みなしで `SearchIndex.append` により追記するのみとする。
-            let index = SearchIndex()
-            index.load(try historyStore.loadIndexEntries())
-            searchIndex = index
-
-            let monitor = ClipboardMonitor(settings: settings, historyStore: historyStore)
-            monitor.onInsert = { [weak index] entry in
-                index?.append(entry)
-            }
-            monitor.start()
-            clipboardMonitor = monitor
-
-            // 起動時＋1時間ごとにパージ・BLOB GC・（必要なら）VACUUMを実行する（設計書8節）。
-            // 挿入ごとには実行しない。
-            let scheduler = MaintenanceScheduler(
-                db: db,
-                historyStore: historyStore,
-                blobStore: blobStore,
-                settings: settings
-            )
-            scheduler.onPurge = { [weak index] deletedIDs in
-                // パージでDBから消えたidを検索インデックスからも除去し、不整合を防ぐ。
-                index?.remove(ids: Set(deletedIDs))
-            }
-            scheduler.start()
-            maintenanceScheduler = scheduler
-
-            setUpPicker(historyStore: historyStore, settings: settings, searchIndex: index)
-        } catch {
-            NSLog("ClipHistory: failed to initialize storage: \(error)")
-        }
-    }
-
-    /// `PickerPanelController` を組み立て、既定ホットキー（既定 ⌥⌘V。設計書 10節）で
-    /// トグルできるようにする。
-    private func setUpPicker(historyStore: HistoryStore, settings: Settings, searchIndex: SearchIndex) {
-        // フェーズ3: 最新順のみだった `RecentResultsProvider` から、fzfライクな絞り込みを行う
-        // `SearchResultsProvider` に差し替える（`RecentResultsProvider` 自体はテスト・
-        // フォールバック用として削除せず残す）。
-        let resultsProvider = SearchResultsProvider(searchIndex: searchIndex, historyStore: historyStore)
-        let controller = PickerPanelController(
-            historyStore: historyStore,
-            resultsProvider: resultsProvider,
-            settings: settings
-        )
-        pickerPanelController = controller
-
-        let manager = HotKeyManager { [weak controller] in
-            controller?.toggle()
-        }
-        hotKeyManager = manager
-
-        registerHotKey(manager, settings: settings)
     }
 
     /// ホットキーの登録を試み、結果をメニューバーへ反映する。
@@ -235,35 +116,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// また `UNUserNotificationCenter` は ad-hoc 署名のローカルアプリでは通知の認可が
     /// 下りない可能性があるため使わず、`NSLog` とメニューバーの状態表示のみで通知する。
     /// これによりメインスレッドを一切ブロックせず、失敗時も `ClipboardMonitor` は動き続ける。
-    private func registerHotKey(_ manager: HotKeyManager, settings: Settings) {
+    private func registerHotKey() {
+        guard let components else { return }
         do {
-            try manager.register(settings.hotKey)
-            applyHotKeyRegistrationSucceeded()
+            try components.registerHotKey()
+            statusItemController?.showHotKeySuccess()
         } catch {
             // 登録失敗時（他アプリとの衝突・多重起動など）はメニューバーで通知する（設計書 12節）
             NSLog("ClipHistory: failed to register hot key: \(error)")
-            applyHotKeyRegistrationFailed(error)
+            statusItemController?.showHotKeyFailure(error)
         }
-    }
-
-    /// ステータスメニューの「ホットキーを再登録」項目から呼ばれる。
-    @objc private func reregisterHotKey() {
-        guard let manager = hotKeyManager else { return }
-        registerHotKey(manager, settings: Settings.shared)
-    }
-
-    /// 登録失敗を示す状態（⚠️アイコン + エラーメニュー項目 + 再登録項目）に切り替える。
-    private func applyHotKeyRegistrationFailed(_ error: Error) {
-        statusItem?.button?.title = Self.hotKeyFailedStatusTitle
-        hotKeyErrorMenuItem?.title = "ホットキー登録失敗: \(error)"
-        hotKeyErrorMenuItem?.isHidden = false
-        reregisterHotKeyMenuItem?.isHidden = false
-    }
-
-    /// 登録成功時（初回成功時・再登録成功時とも）に通常状態へ戻す。
-    private func applyHotKeyRegistrationSucceeded() {
-        statusItem?.button?.title = Self.normalStatusTitle
-        hotKeyErrorMenuItem?.isHidden = true
-        reregisterHotKeyMenuItem?.isHidden = true
     }
 }
