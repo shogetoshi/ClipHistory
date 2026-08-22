@@ -73,6 +73,7 @@ fzf ライクな曖昧検索で目的の項目を探し、クリップボード�
 | `PreviewContentLoader` | プレビュー内容を `HistoryStore` から解決する |
 | `NvimEditModeController` | nvim 編集モードのライフサイクル |
 | `Settings` | `UserDefaults` ベースの設定管理 |
+| `Config` | TOML 設定ファイルの読み込み（`TOMLParser` を使う） |
 | `MaintenanceScheduler` | 起動時＋定期のパージ・BLOB GC 実行 |
 
 ### 3.2 データフロー
@@ -373,7 +374,7 @@ nvim 編集モード中は Esc を含む全キーを nvim へ流すため、脱�
 | --- | --- |
 | 描画 | `previewBox` の3層目として SwiftTerm の `LocalProcessTerminalView` を重ね、PTY 上で nvim を起動する（既存の `previewScrollView` / `previewImageView` の排他切り替えの延長）。別ウィンドウのターミナルは開かない |
 | 起動契機 | **オンデマンド**。ブラウズ中は `previewTextView` のままとし、`⌘E` を押した項目だけターミナル層を前面に出す |
-| 起動方法 | `/bin/zsh -l -c "exec <nvim絶対パス> --listen <sock> -- <一時ファイル>"`。nvim の絶対パスは初回に `/bin/zsh -l -c "command -v nvim"` で解決してプロセス内にキャッシュする |
+| 起動方法 | `/bin/zsh -l -c "exec <nvim絶対パス> --listen <sock> -- <一時ファイル>"`。nvim の絶対パスは初回に `/bin/zsh -l -c "command -v nvim"` で解決してプロセス内にキャッシュする。設定ファイル（10.2）があれば `export` / `--cmd` / `-c` が加わる |
 | 編集対象 | `HistoryStore.loadFullText(itemID:)` で読んだ本文全体。`kind == .image` の項目は対象外 |
 | レイアウト | 編集モード中は一覧を隠し、`previewBox` を全幅へ拡張する |
 | 取り出し | `nvim --server <sock> --remote-expr 'writefile(getbufline(bufnr(<src>),1,"$"), <out>)'` を `Process` で叩く |
@@ -469,7 +470,12 @@ macOS の press-and-hold（`ApplePressAndHoldEnabled`、既定 ON）が有効だ
 
 ---
 
-## 10. 設定項目（`UserDefaults`）
+## 10. 設定項目
+
+設定は2系統ある。アプリ自身が書き換える値は `UserDefaults`（10.1）に、利用者が手で書く値は
+`~/.config/cliphistory/` 配下のファイル（10.2）に置く。
+
+### 10.1 `UserDefaults`
 
 | キー | 既定値 | 説明 |
 | --- | --- | --- |
@@ -482,6 +488,104 @@ macOS の press-and-hold（`ApplePressAndHoldEnabled`、既定 ON）が有効だ
 | `inlineBlobThreshold` | 64 KB | この値以下は DB 内 BLOB、超過は外部ファイル |
 | `skipConcealed` | true | 機密フラグ付きデータをスキップ |
 | `panelFrame` | なし | パネルの位置・大きさ。移動・リサイズ時に保存し、次回表示時に復元する。未保存時は既定配置を使う |
+
+### 10.2 設定ファイル
+
+利用者が手で編集する設定は `~/.config/cliphistory/` に置く（Issue 0011）。`UserDefaults` と分けたのは、
+設定画面から書き換える値（10.1）と違い、こちらは**アプリが書き戻さない読み取り専用**の値であり、
+エディタで直接開いて差分を追える形が望ましいため。
+
+| 項目 | 仕様 |
+| --- | --- |
+| 場所 | `$XDG_CONFIG_HOME/cliphistory/`。`XDG_CONFIG_HOME` が未設定・空・相対パスの場合は XDG 仕様どおり `~/.config/cliphistory/` にフォールバックする |
+| 不在時 | 何も置かなくても従来どおり動く。3つとも無ければ nvim の起動コマンドはこの機能を入れる前と完全に同一 |
+| 不正時 | `NSLog` に行番号付きのエラーを残し、既定値で起動する。起動は止めない（13.3 と同じ方針） |
+| 未知の項目 | エラーにせず無視する。将来項目を追加したとき、古いバイナリが新しい設定ファイルで壊れないようにするため |
+
+置けるファイルは3つで、いずれも**有無だけで決まる**。
+
+```
+~/.config/cliphistory/
+  ├── config.toml     ← アプリ本体の設定。プロセス起動時に1回だけ読む
+  ├── init-pre.lua    ← 利用者の nvim 設定より「前」に走る
+  └── init.lua        ← 利用者の nvim 設定より「後」に走る
+```
+
+| ファイル | nvim へ渡る形 | 走る位置 | 向いている用途 |
+| --- | --- | --- | --- |
+| `config.toml` の `[nvim.env]` | 起動コマンド先頭の `export` | nvim 起動前 | nvim が Lua を走らせる前に読む値（`XDG_*` 系など） |
+| `init-pre.lua` | `--cmd 'lua dofile(...)'` | 利用者設定の**前** | `vim.env.PATH` の追加など、プラグイン・LSP の起動に間に合わせたい処理 |
+| `init.lua` | `-c 'lua dofile(...)'` | 利用者設定の**後**（編集対象を開いた後） | オプション・キーマップの上書き |
+
+`~/.config/nvim/` は3つとも読まれる前提を崩さない。このアプリ専用の設定を利用者の nvim 設定へ
+書き込ませないことがこの節の目的である。
+
+```toml
+# config.toml
+[nvim.env]
+NVIM_CLIPHISTORY = "1"
+```
+
+```lua
+-- init-pre.lua : このアプリから起動した nvim にだけ PATH を足す
+vim.env.PATH = vim.env.PATH .. ":/opt/hoge/bin"
+```
+
+```lua
+-- init.lua : クリップボード1件を編集する用途に寄せる
+vim.opt.wrap = true
+vim.opt.number = false
+vim.keymap.set("n", "q", "<Cmd>qa<CR>")
+```
+
+`config.toml` はプロセス起動時に1回だけ読むため、変更の反映にはアプリの再起動が必要。`.lua` の2つは
+セッションごとに有無を判定するため、置いた直後から効く。
+
+**`[nvim.env]` に書いてはならない2つ**
+
+| キー | 何が起きるか |
+| --- | --- |
+| `NVIM_APPNAME` | nvim が設定を読むディレクトリ自体が `$XDG_CONFIG_HOME/<値>/` へ切り替わる（既定値は `nvim`）。指定すると `~/.config/nvim/` が読まれず、利用者の nvim 設定が丸ごと外れる |
+| `PATH` | 値はリテラルとして渡すため `PATH = "$PATH:/opt/hoge/bin"` と書いても展開されず、PATH が文字列 `$PATH:/opt/hoge/bin` に壊れる。PATH の追加は `init-pre.lua` で `vim.env.PATH` を使う |
+
+どちらも実装中に実際に踏んだ。`[nvim.env]` の値は `export KEY='VALUE'` とシングルクォートで囲む、
+つまり**リテラルとして渡す**のが仕様であり、シェル展開はしない。展開を許すには `export KEY="VALUE"` に
+変える必要があるが、それだと `$(...)` やバックティックのコマンド置換まで通ってしまう。安全性を保つには
+「`$NAME` と `${NAME}` 以外は拒否」といった検証を抱えることになり、記法が複雑になる。前段設定があれば
+`vim.env.PATH = vim.env.PATH .. ":/opt/hoge/bin"` と Lua で書けてシェルのクォートが一切絡まないため、
+この複雑さを持ち込まない。
+
+結果として `[nvim.env]` の出番は狭い。任意の環境変数は `vim.env.FOO` で書けるため、残る用途は nvim が
+Lua を走らせる前に読む値に限られる。新しく何か渡すなら前段設定に書く方がよい。
+
+**なぜ環境変数だけでは足りず `.lua` を置けるようにしたか**
+
+`[nvim.env]` で目印を渡せても、それを読む分岐は利用者の `~/.config/nvim/init.lua` に書くしかない。
+「このアプリからの呼び出しにだけ効く設定」がそこに入るのは nvim 本来の領域を侵すことになり避けたい。
+nvim 側の既存の仕組みで済ませられないかも検討したが、いずれも成立しなかった。`NVIM_APPNAME` は
+設定ディレクトリを**差し替える**変数なので `~/.config/nvim/` が読まれなくなる。`$XDG_CONFIG_DIRS/nvim` は
+素の nvim では `runtimepath` に入るものの、lazy.nvim が `runtimepath` を作り直すため実環境では消えることを
+実測で確認した。結局、起動コマンドを組み立てている本アプリ側で読ませるのが確実である。
+
+**なぜ前段と後段の2段か**
+
+役割が違い、片方では両方の用途を満たせないため。`-c`（後段）は利用者設定を評価し編集対象ファイルを
+開いた後に走るのでオプション・キーマップの上書きが確実に効く。一方 PATH の追加はこれでは間に合わない。
+PATH は lazy.nvim や coc が**起動時に実行ファイルを探すのに使う値**であり、`-c` の時点でその処理は
+終わっている。`--cmd` が利用者設定より前に走ることは実測で確認した（前段で `wrap` を立てても、後から
+利用者設定が `nowrap` に戻すため最終値が `0` になる）。
+
+**なぜ `luafile` ではなく `dofile` か**
+
+`luafile <パス>` はパスを Ex コマンドの引数として渡すため、空白・`|`・`%`・`#` などを含むパスで
+エスケープ規則が煩雑になる。Lua の文字列リテラルへ入れれば `\` と `"` の2文字をエスケープするだけで済む。
+
+**なぜ TOML ライブラリを追加しないか**
+
+外部依存は SwiftTerm 1件のみという方針（13.1）を維持するため、`TOMLParser` として最小サブセット
+（行コメント・`[table]` / `[a.b]` のテーブルヘッダ・`key = "基本文字列"`）だけを自前実装した。
+設定項目は文字列から文字列への写像しかなく、数値・真偽値・配列・インラインテーブルを解釈する必要がない。
+未対応の構文は行番号付きでエラーにするため、将来足りなくなったときに黙って誤読するのではなく気づける。
 
 ---
 

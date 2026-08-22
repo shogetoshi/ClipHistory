@@ -1,4 +1,5 @@
 import Foundation
+import ClipHistoryCore
 
 /// nvim エラー型。
 enum NvimEditSessionError: LocalizedError {
@@ -37,6 +38,15 @@ final class NvimEditSession {
 
     private let sessionDirectory: URL
     private let nvimPath: String
+    /// nvim 起動時に追加で渡す環境変数（Issue 0011）。`export` のクォートにはリテラルの
+    /// シングルクォートを使うため、シェル展開（`$PATH` 等）はされない。
+    private let environment: [String: String]
+    /// 利用者設定より前に読ませる、このアプリ専用の nvim 設定ファイルの絶対パス（Issue 0011）。
+    /// `init` の時点で存在確認済みで、存在しなければ nil（起動コマンドに何も加えない）。
+    private let nvimInitPrePath: String?
+    /// 利用者設定より後に読ませる、このアプリ専用の nvim 設定ファイルの絶対パス（Issue 0011）。
+    /// `init` の時点で存在確認済みで、存在しなければ nil（起動コマンドに何も加えない）。
+    private let nvimInitPath: String?
     /// 読み戻し時、末尾改行の有無を元テキストに合わせるために保持する。
     private let sourceEndsWithNewline: Bool
     /// `init` でテキストを書き出した直後の `sourceURL` の更新日時。
@@ -95,10 +105,49 @@ final class NvimEditSession {
         s.replacingOccurrences(of: "'", with: "''")
     }
 
-    init(text: String) throws {
+    /// Lua の文字列リテラル（ダブルクォート）内に安全に埋め込むためのエスケープ。
+    /// `--cmd` / `-c` に渡す前段・後段設定の読み込みには Ex コマンドの `luafile` ではなく
+    /// Lua の `dofile` を使う。`luafile <パス>` は Ex コマンドの引数としてパスを渡すため
+    /// 空白・`|`・`%`・`#` を含むパスでエスケープ規則が煩雑になるが、Lua の文字列リテラルなら
+    /// `\` と `"` の2文字だけエスケープすれば済むため。
+    /// 置換順は `\` → `"` の順で行うこと（逆にすると `"` のエスケープで入れた `\` が
+    /// 再度エスケープされ、二重エスケープになってしまう）。
+    private static func luaStringEscape(_ s: String) -> String {
+        s.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
+    /// `--cmd` / `-c` にそのまま渡せる `lua dofile("<path>")` コマンド文字列を組み立てる。
+    /// 呼び出し側でシェルのシングルクォートにくるむこと。
+    private static func luaDofileCommand(_ path: String) -> String {
+        "lua dofile(\"\(luaStringEscape(path))\")"
+    }
+
+    /// シェル変数名として妥当か（先頭が英字または `_`、以降は英数字または `_`）を判定する。
+    private static func isValidShellVariableName(_ name: String) -> Bool {
+        guard let first = name.first else { return false }
+        guard first.isASCII, first.isLetter || first == "_" else { return false }
+        return name.dropFirst().allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_") }
+    }
+
+    init(
+        text: String,
+        environment: [String: String] = Config.shared.nvimEnvironment,
+        nvimInitPreURL: URL? = AppPaths.nvimInitPreURL(),
+        nvimInitURL: URL? = AppPaths.nvimInitURL()
+    ) throws {
         // ディレクトリを作る前に nvim の絶対パスを解決しておく。
         // ここで見つからず throw した場合、ディレクトリを作らずに済むため後片付けが不要になる。
         self.nvimPath = try Self.resolveNvimPath()
+        self.environment = environment
+        // 存在しないファイルを nvim に渡すとエラーメッセージが出てしまうため、
+        // ここで1回だけ存在確認し、無ければ以降 nil のまま扱う（起動コマンドに何も加えない）。
+        self.nvimInitPrePath = nvimInitPreURL.flatMap {
+            FileManager.default.fileExists(atPath: $0.path) ? $0.path : nil
+        }
+        self.nvimInitPath = nvimInitURL.flatMap {
+            FileManager.default.fileExists(atPath: $0.path) ? $0.path : nil
+        }
 
         // ディレクトリ名は短くする。UNIX ドメインソケットのパス長には104バイトの上限があり、
         // `temporaryDirectory` 配下に長い名前を作るとソケットパスがこれを超えかねないため。
@@ -133,10 +182,39 @@ final class NvimEditSession {
     /// ログインシェル（`-l`）経由で nvim を起動することで、ユーザーの環境変数
     /// （LSP サーバのパス等）も nvim に渡るようにする。
     var launchArguments: [String] {
-        let command = "exec \(Self.shellSingleQuoteEscape(nvimPath))" +
-            " --listen \(Self.shellSingleQuoteEscape(socketURL.path))" +
-            " -- \(Self.shellSingleQuoteEscape(sourceURL.path))"
-        return ["-l", "-c", command]
+        // 環境変数は `LocalProcessTerminalView.startProcess(environment:)` ではなく
+        // ここでコマンド文字列に `export` を書く形で渡す。nvim はログインシェル経由で
+        // 起動しており、シェルの起動ファイル（`.zshenv` / `.zprofile` 等）が同名の変数を
+        // 上書きしうる。`-c` で渡すコマンドは起動ファイルの評価後に走るため、
+        // ここで `export` すれば利用者の設定より確実に後勝ちになる。
+        // キー名はシェル変数名として妥当なものだけを通し、出力順を安定させるためキーでソートする。
+        let exports = environment.keys.sorted().compactMap { key -> String? in
+            guard Self.isValidShellVariableName(key) else {
+                NSLog("ClipHistory: 不正な環境変数名のため export をスキップします: \(key)")
+                return nil
+            }
+            return "export \(key)=\(Self.shellSingleQuoteEscape(environment[key] ?? ""))"
+        }
+
+        var execParts = ["exec \(Self.shellSingleQuoteEscape(nvimPath))"]
+        // 前段設定（`--cmd`）は `--listen` より前に置く。nvim のオプションであり、
+        // 利用者の `~/.config/nvim/` より前に走るため、`vim.env.PATH` の追加のような
+        // プラグイン・LSP の起動に間に合わせたい処理を置く場所になる。
+        if let nvimInitPrePath {
+            execParts.append("--cmd \(Self.shellSingleQuoteEscape(Self.luaDofileCommand(nvimInitPrePath)))")
+        }
+        execParts.append("--listen \(Self.shellSingleQuoteEscape(socketURL.path))")
+        // 後段設定（`-c`）は `--listen` の後、`--` の前に置く。利用者設定を評価し
+        // 編集対象ファイルを開いた後に走るため、オプション・キーマップの上書きに向く。
+        if let nvimInitPath {
+            execParts.append("-c \(Self.shellSingleQuoteEscape(Self.luaDofileCommand(nvimInitPath)))")
+        }
+        execParts.append("-- \(Self.shellSingleQuoteEscape(sourceURL.path))")
+
+        var parts = exports.isEmpty ? [] : [exports.joined(separator: "; ")]
+        parts.append(execParts.joined(separator: " "))
+
+        return ["-l", "-c", parts.joined(separator: "; ")]
     }
 
     /// nvim 側の編集内容を取り出す。
