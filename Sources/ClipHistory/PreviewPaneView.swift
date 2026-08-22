@@ -4,6 +4,7 @@ import Cocoa
 /// テキストと画像を同じ領域に重ねて配置し、排他的に切り替える。
 /// nvim 編集モード（Issue 0006）では、このビュー自身をコンテナとして
 /// `NvimEditModeController` がターミナルビューを載せる。
+/// 配色はターミナル風に揃えている（Issue 0012）。
 final class PreviewPaneView: NSBox {
     private let scrollView = NSScrollView()
     private let textView = NSTextView()
@@ -15,10 +16,17 @@ final class PreviewPaneView: NSBox {
         textView.isEditable = false
         textView.isSelectable = true
         textView.drawsBackground = false
+        // 文字色・選択色・キャレット色をターミナル風に揃える（Issue 0012）。
+        textView.textColor = TerminalTheme.foreground
+        textView.insertionPointColor = TerminalTheme.accent
+        textView.selectedTextAttributes = [
+            .backgroundColor: TerminalTheme.selectionBackground,
+            .foregroundColor: TerminalTheme.foreground
+        ]
         textView.textContainerInset = NSSize(width: 4, height: 4)
         // 等幅フォントにする。コピーしたコードや設定ファイルなどを崩さず、
         // インデントや桁位置が意図通りに見えるようにするため。
-        textView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        textView.font = TerminalTheme.previewFont
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
@@ -28,12 +36,15 @@ final class PreviewPaneView: NSBox {
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.documentView = textView
         scrollView.hasVerticalScroller = true
-        scrollView.drawsBackground = false
+        // プレビューの下地をターミナル風の暗い色にする（Issue 0012）。
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = TerminalTheme.contentBackground
         scrollView.autohidesScrollers = true
 
         boxType = .custom
-        fillColor = .textBackgroundColor
-        borderColor = .separatorColor
+        fillColor = TerminalTheme.contentBackground
+        borderColor = TerminalTheme.border
+        borderWidth = TerminalTheme.borderWidth
         cornerRadius = 6
         titlePosition = .noTitle
         addSubview(scrollView)
