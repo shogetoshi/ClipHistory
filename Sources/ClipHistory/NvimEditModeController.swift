@@ -50,8 +50,11 @@ final class NvimEditModeController: NSObject {
         let terminal = LocalProcessTerminalView(frame: container.bounds)
         terminal.translatesAutoresizingMaskIntoConstraints = false
         terminal.configureNativeColors()
-        // プレビューと同じ等幅フォントに揃える。
-        terminal.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        // プレビューと同じ等幅フォント・下地に揃える（Issue 0012）。
+        terminal.font = TerminalTheme.previewFont
+        terminal.nativeBackgroundColor = TerminalTheme.contentBackground
+        terminal.nativeForegroundColor = TerminalTheme.foreground
+        terminal.caretColor = TerminalTheme.accent
         terminal.processDelegate = self
         container.addSubview(terminal)
         NSLayoutConstraint.activate([

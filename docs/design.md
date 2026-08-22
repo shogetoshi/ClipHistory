@@ -299,8 +299,29 @@ fzf と同じ手法を採る。
 | 行の表示 | プレビュー本文（1〜2 行）、コピー元アプリ名、相対時刻 |
 | プレビュー | 読み取り専用の `NSTextView`（`NSScrollView` 内、`NSBox` で枠を描く）。フォントは等幅。一覧行が改行・連続空白を半角スペース1個に畳んだ1行表示（`DisplayText.singleLine`）なのに対し、プレビューは改行をそのまま描画する |
 | 描画 | `NSTableView` のセル再利用による遅延描画。全件をメモリ展開しない |
-| 背景 | 不透明（`windowBackgroundColor`）の角丸ビューで描く。半透明にはしない。`contentViewController` の代入で `contentView` が置き換わるため、背景はパネルではなくルートビュー側（`PanelBackgroundView`）が描く |
+| 背景 | 不透明の角丸ビュー（`TerminalTheme.background` ＋ `TerminalTheme.border` の枠線）で描く。半透明にはしない。`contentViewController` の代入で `contentView` が置き換わるため、背景はパネルではなくルートビュー側（`PanelBackgroundView`）が描く |
 | 本文の読み出し | 一覧は `preview_text` のみを使用。プレビューと選択確定時は `representations` から読む。プレビューは `HistoryStore.loadPreviewText(itemID:maxCharacters:)` で `public.utf8-plain-text` の実データを上限 4,000 文字まで読み直す（`preview_text` は一覧用に先頭 200 文字で打ち切っているためプレビューの用途を満たせない）。テキスト表現が無い場合は `preview_text` をフォールバック表示する。選択項目が `kind == .image` の場合は、`HistoryStore.loadPreviewImageData(itemID:)`（`PasteboardImageType.orderedUTIs` の優先順で1件を選び、切り詰めずに実データ全体を返す）で読み出した画像をプレビュー表示する |
+
+**配色とフォント（Issue 0012）**
+
+見た目はターミナルを模したダーク基調で統一する。システムのライト/ダーク設定に関わらず
+`NSApp.appearance = NSAppearance(named: .darkAqua)` でアプリ全体をダークに固定し、
+色・等幅フォント・角丸半径・枠線幅は `TerminalTheme`（`Sources/ClipHistory/TerminalTheme.swift`）に集約する。
+ダークに固定する以上、`labelColor` などの動的色は追従先が無く意味を持たないため、
+`TerminalTheme` の色は固定の sRGB 値で定義する。
+
+| 対象 | 見た目 |
+| --- | --- |
+| パネル | 下地 `background`、枠線 `border`、角丸 `cornerRadius` |
+| 一覧・プレビュー・検索欄の下地 | `contentBackground` |
+| 本文 | `foreground` ／ コピー元アプリ名・相対時刻は `secondaryForeground` |
+| プロンプト記号・キャレット | `accent`（ターミナルの緑） |
+| 一覧の選択行 | `selectionBackground`。システム標準の選択色（青系のアクセントカラー）は合わないため、`NSTableRowView` を継承した `TerminalTableRowView` で `drawSelection(in:)` を差し替えて自前で塗る。選択の判定・移動は `NSTableView` に任せたままにする |
+| フォント | 一覧・検索欄・プレビュー・設定画面いずれも等幅（`NSFont.monospacedSystemFont` ／ SwiftUI 側は `.monospaced()`） |
+| 検索欄 | 角丸ベゼルをやめ平らな暗い下地にする。左端の虫眼鏡は、プロンプト記号に見える `chevron.right` へ差し替える（検索メニュー（`searchMenuTemplate`）を設定していない装飾でしかないため、差し替えても操作は変わらない）。文字を消すキャンセルボタンは機能なので残す |
+| nvim 編集モードのターミナル | `configureNativeColors()` の後に `nativeBackgroundColor` / `nativeForegroundColor` / `caretColor` を上書きし、プレビューと同じ配色にする |
+
+見た目のみの変更であり、キー操作・ウィンドウの挙動・保存されるデータ・検索の挙動は変えていない。
 
 **左右分割にした理由**
 

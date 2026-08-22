@@ -14,6 +14,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if checkForDuplicateInstance() {
             return
         }
+        // 見た目をターミナル風に統一するため、システムのライト/ダーク設定に関わらず
+        // アプリ全体をダークに固定する（Issue 0012）。
+        NSApp.appearance = NSAppearance(named: .darkAqua)
         setUpStatusItem()
         setUpComponents()
     }

@@ -39,6 +39,7 @@ final class PickerPanel: NSPanel {
 }
 
 /// パネルの不透明な角丸背景を描くビュー（`PickerViewController.loadView()` のルートビューとして使う）。
+/// ターミナル風の暗い下地と枠線を描く（Issue 0012）。
 final class PanelBackgroundView: NSView {
     override var wantsUpdateLayer: Bool { true }
 
@@ -50,7 +51,8 @@ final class PanelBackgroundView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layer?.cornerRadius = 12
+        layer?.cornerRadius = TerminalTheme.cornerRadius
+        layer?.borderWidth = TerminalTheme.borderWidth
         layer?.masksToBounds = true
     }
 
@@ -60,7 +62,8 @@ final class PanelBackgroundView: NSView {
     }
 
     override func updateLayer() {
-        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        layer?.backgroundColor = TerminalTheme.background.cgColor
+        layer?.borderColor = TerminalTheme.border.cgColor
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {

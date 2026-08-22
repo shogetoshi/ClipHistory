@@ -83,6 +83,33 @@ final class PickerViewController: NSViewController {
         searchField.translatesAutoresizingMaskIntoConstraints = false
         searchField.delegate = self
         searchField.placeholderString = "検索"
+        // 検索欄をターミナルのプロンプト行のような見た目にする（Issue 0012）。
+        // 入力の受け付け・デリゲート経由のキー操作は変えず、フォントと配色だけを差し替える。
+        searchField.font = TerminalTheme.searchFont
+        searchField.textColor = TerminalTheme.foreground
+        searchField.focusRingType = .none
+        (searchField.cell as? NSSearchFieldCell)?.placeholderAttributedString = NSAttributedString(
+            string: "検索",
+            attributes: [
+                .foregroundColor: TerminalTheme.secondaryForeground,
+                .font: TerminalTheme.searchFont
+            ]
+        )
+        searchField.bezelStyle = .squareBezel
+        searchField.drawsBackground = true
+        searchField.backgroundColor = TerminalTheme.contentBackground
+        // 左端の虫眼鏡は、ターミナルのプロンプト記号に見えるよう chevron に差し替える。
+        // このアイコンは検索メニュー（searchMenuTemplate）を設定していないため装飾でしかなく、
+        // 差し替えても操作できることは変わらない。
+        if let searchButton = (searchField.cell as? NSSearchFieldCell)?.searchButtonCell,
+           let prompt = NSImage(systemSymbolName: "chevron.right", accessibilityDescription: nil) {
+            let tinted = prompt.withSymbolConfiguration(
+                NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+                    .applying(NSImage.SymbolConfiguration(paletteColors: [TerminalTheme.accent]))
+            )
+            searchButton.image = tinted
+            searchButton.alternateImage = tinted
+        }
         root.addSubview(searchField)
 
         // 列幅をパネル幅に追従させる（修正1）。
@@ -96,6 +123,8 @@ final class PickerViewController: NSViewController {
         tableView.addTableColumn(column)
         tableView.headerView = nil
         tableView.usesAlternatingRowBackgroundColors = false
+        // 行間の区切り線を出さず、ターミナルの出力のように行が連続して見えるようにする（Issue 0012）。
+        tableView.gridStyleMask = []
         tableView.backgroundColor = .clear
         // 単一列のテーブルなので列を常にテーブル幅いっぱいに合わせる
         tableView.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
@@ -112,7 +141,9 @@ final class PickerViewController: NSViewController {
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
-        scrollView.drawsBackground = false
+        // 一覧の下地をターミナル風の暗い色にする（Issue 0012）。
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = TerminalTheme.contentBackground
         scrollView.autohidesScrollers = true
         root.addSubview(scrollView)
 
@@ -339,6 +370,11 @@ extension PickerViewController: NSTableViewDelegate {
         return cell
     }
 
+    /// 選択行の塗りをターミナル風にするため、独自の行ビューを使う（Issue 0012）。
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        TerminalTableRowView()
+    }
+
     /// 選択行が変わるたびにプレビューを更新する（Issue 0002）。
     func tableViewSelectionDidChange(_ notification: Notification) {
         updatePreview()
@@ -374,5 +410,17 @@ extension PickerViewController: NSSearchFieldDelegate {
         default:
             return false
         }
+    }
+}
+
+/// 一覧の選択行をターミナル風の暗い緑で塗るための行ビュー（Issue 0012）。
+/// システム標準の選択色（青系のアクセントカラー）はターミナルの見た目と合わないため、
+/// `drawSelection(in:)` を差し替えて自前で塗る。選択の判定・移動そのものは
+/// `NSTableView` に任せたままで、描画だけを変えている。
+final class TerminalTableRowView: NSTableRowView {
+    override func drawSelection(in dirtyRect: NSRect) {
+        guard selectionHighlightStyle != .none, isSelected else { return }
+        TerminalTheme.selectionBackground.setFill()
+        dirtyRect.fill()
     }
 }
