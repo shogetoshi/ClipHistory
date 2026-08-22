@@ -83,6 +83,33 @@ final class PickerViewController: NSViewController {
         searchField.translatesAutoresizingMaskIntoConstraints = false
         searchField.delegate = self
         searchField.placeholderString = "検索"
+        // 検索欄をターミナルのプロンプト行のような見た目にする（Issue 0012）。
+        // 入力の受け付け・デリゲート経由のキー操作は変えず、フォントと配色だけを差し替える。
+        searchField.font = TerminalTheme.searchFont
+        searchField.textColor = TerminalTheme.foreground
+        searchField.focusRingType = .none
+        (searchField.cell as? NSSearchFieldCell)?.placeholderAttributedString = NSAttributedString(
+            string: "検索",
+            attributes: [
+                .foregroundColor: TerminalTheme.secondaryForeground,
+                .font: TerminalTheme.searchFont
+            ]
+        )
+        searchField.bezelStyle = .squareBezel
+        searchField.drawsBackground = true
+        searchField.backgroundColor = TerminalTheme.contentBackground
+        // 左端の虫眼鏡は、ターミナルのプロンプト記号に見えるよう chevron に差し替える。
+        // このアイコンは検索メニュー（searchMenuTemplate）を設定していないため装飾でしかなく、
+        // 差し替えても操作できることは変わらない。
+        if let searchButton = (searchField.cell as? NSSearchFieldCell)?.searchButtonCell,
+           let prompt = NSImage(systemSymbolName: "chevron.right", accessibilityDescription: nil) {
+            let tinted = prompt.withSymbolConfiguration(
+                NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+                    .applying(NSImage.SymbolConfiguration(paletteColors: [TerminalTheme.accent]))
+            )
+            searchButton.image = tinted
+            searchButton.alternateImage = tinted
+        }
         root.addSubview(searchField)
 
         // 列幅をパネル幅に追従させる（修正1）。
