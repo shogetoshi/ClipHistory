@@ -33,15 +33,15 @@ final class HistoryItemCellView: NSTableCellView {
         previewLabel.maximumNumberOfLines = 2
         // 高さを固定した範囲に収まらない分を、行数途中でも省略記号付きで切る
         (previewLabel.cell as? NSTextFieldCell)?.truncatesLastVisibleLine = true
-        previewLabel.font = .systemFont(ofSize: 13)
-        previewLabel.textColor = .labelColor
+        previewLabel.font = TerminalTheme.listFont
+        previewLabel.textColor = TerminalTheme.foreground
         addSubview(previewLabel)
 
         subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
         subtitleLabel.lineBreakMode = .byTruncatingTail
         subtitleLabel.maximumNumberOfLines = 1
-        subtitleLabel.font = .systemFont(ofSize: 11)
-        subtitleLabel.textColor = .secondaryLabelColor
+        subtitleLabel.font = TerminalTheme.listSubtitleFont
+        subtitleLabel.textColor = TerminalTheme.secondaryForeground
         addSubview(subtitleLabel)
 
         // サブタイトルを行の下端に固定する（修正3）。

@@ -96,6 +96,8 @@ final class PickerViewController: NSViewController {
         tableView.addTableColumn(column)
         tableView.headerView = nil
         tableView.usesAlternatingRowBackgroundColors = false
+        // 行間の区切り線を出さず、ターミナルの出力のように行が連続して見えるようにする（Issue 0012）。
+        tableView.gridStyleMask = []
         tableView.backgroundColor = .clear
         // 単一列のテーブルなので列を常にテーブル幅いっぱいに合わせる
         tableView.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
@@ -112,7 +114,9 @@ final class PickerViewController: NSViewController {
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
-        scrollView.drawsBackground = false
+        // 一覧の下地をターミナル風の暗い色にする（Issue 0012）。
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = TerminalTheme.contentBackground
         scrollView.autohidesScrollers = true
         root.addSubview(scrollView)
 
@@ -339,6 +343,11 @@ extension PickerViewController: NSTableViewDelegate {
         return cell
     }
 
+    /// 選択行の塗りをターミナル風にするため、独自の行ビューを使う（Issue 0012）。
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        TerminalTableRowView()
+    }
+
     /// 選択行が変わるたびにプレビューを更新する（Issue 0002）。
     func tableViewSelectionDidChange(_ notification: Notification) {
         updatePreview()
@@ -374,5 +383,17 @@ extension PickerViewController: NSSearchFieldDelegate {
         default:
             return false
         }
+    }
+}
+
+/// 一覧の選択行をターミナル風の暗い緑で塗るための行ビュー（Issue 0012）。
+/// システム標準の選択色（青系のアクセントカラー）はターミナルの見た目と合わないため、
+/// `drawSelection(in:)` を差し替えて自前で塗る。選択の判定・移動そのものは
+/// `NSTableView` に任せたままで、描画だけを変えている。
+final class TerminalTableRowView: NSTableRowView {
+    override func drawSelection(in dirtyRect: NSRect) {
+        guard selectionHighlightStyle != .none, isSelected else { return }
+        TerminalTheme.selectionBackground.setFill()
+        dirtyRect.fill()
     }
 }
