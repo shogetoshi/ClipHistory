@@ -80,6 +80,7 @@ final class SettingsViewModel: ObservableObject {
 }
 
 /// 設定画面の本体。凝ったデザインは不要という指示のため、`Form` による最小限の構成にする。
+/// フォントだけはアプリの他の画面に合わせて等幅にする（Issue 0012）。
 struct SettingsView: View {
     @ObservedObject var viewModel: SettingsViewModel
 
@@ -111,6 +112,8 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        // アプリの他の画面（一覧・検索欄・プレビュー）と同じく等幅フォントに揃える（Issue 0012）。
+        .monospaced()
         .frame(width: 420, height: 420)
     }
 
