@@ -59,17 +59,18 @@ struct SearchIndexTests {
         #expect(hits == [2, 1])
     }
 
-    @Test("スコア降順に並び、同点はcreatedAt降順→id降順で解決する")
-    func scoreOrderingWithTieBreaks() {
+    @Test("絞り込み結果はスコアに関わらずcreatedAt降順で並ぶ")
+    func filteredResultsAreOrderedByCreatedAtDescendingRegardlessOfScore() {
         let index = SearchIndex()
         index.load([
-            // "foo" が連続一致する方が、分散一致するものよりスコアが高いはず
-            makeEntry(id: 1, createdAt: 1_000, text: "xx f xx o xx o xx"),
-            makeEntry(id: 2, createdAt: 2_000, text: "foo appears consecutively"),
+            // "foo" が連続一致する方が、分散一致するものよりスコアは高いはずだが、
+            // createdAt が新しい id 1 が先に来ること（スコア順ではないこと）を検証する
+            makeEntry(id: 1, createdAt: 2_000, text: "xx f xx o xx o xx"),
+            makeEntry(id: 2, createdAt: 1_000, text: "foo appears consecutively"),
         ])
 
         let hits = index.search(query: "foo", limit: 10)
-        #expect(hits == [2, 1])
+        #expect(hits == [1, 2])
     }
 
     @Test("逐次絞り込みの正当性: f→fo→fooの結果がfooを直接検索した結果と完全に一致する")

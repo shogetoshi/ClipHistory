@@ -68,7 +68,7 @@ public final class SearchIndex {
         refineStack.removeAll()
     }
 
-    /// クエリに対する検索結果を、マッチしたitem idのスコア降順（同点はcreatedAt降順→id降順）で返す。
+    /// クエリに対する検索結果を、マッチしたitem idのcreatedAt降順（同点はid降順）で返す。
     public func search(query: String, limit: Int) -> [Int64] {
         let normalizedQuery = Normalizer.normalize(query)
         let terms = tokenize(normalizedQuery)
@@ -98,18 +98,17 @@ public final class SearchIndex {
             candidates = entries
         }
 
-        var scored: [(id: Int64, createdAt: Int64, score: Int)] = []
+        var scored: [(id: Int64, createdAt: Int64)] = []
         scored.reserveCapacity(candidates.count)
 
         for entry in candidates {
-            if let total = totalScore(entry: entry, terms: terms) {
-                scored.append((entry.id, entry.createdAt, total))
+            if totalScore(entry: entry, terms: terms) != nil {
+                scored.append((entry.id, entry.createdAt))
             }
         }
 
-        // 総合スコア降順。同点は created_at 降順 → id 降順で解決（設計書6.3）
+        // created_at 降順。同点は id 降順で解決（絞り込み中も一覧の並びは常に時刻順を保つ）
         scored.sort { lhs, rhs in
-            if lhs.score != rhs.score { return lhs.score > rhs.score }
             if lhs.createdAt != rhs.createdAt { return lhs.createdAt > rhs.createdAt }
             return lhs.id > rhs.id
         }
