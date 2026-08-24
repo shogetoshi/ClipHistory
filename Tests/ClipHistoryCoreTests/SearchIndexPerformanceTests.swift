@@ -34,11 +34,18 @@ struct SearchIndexPerformanceTests {
         let midHitsMs = Self.measureMs { _ = midHitsIndex.search(query: "history", limit: 200) }
         let midHitsCount = midHitsIndex.search(query: "history", limit: 60_000).count
 
+        // 否定つき1文字クエリ: 特殊構文パス（毎回entries全件を走査）のコストを測る。
+        let negatedIndex = SearchIndex()
+        negatedIndex.load(entries)
+        let negatedMs = Self.measureMs { _ = negatedIndex.search(query: "!e", limit: 200) }
+        let negatedCount = negatedIndex.search(query: "!e", limit: 60_000).count
+
         print("""
         [SearchIndex performance] 60,000件
           多ヒット(1文字 'e'):            \(String(format: "%.2f", manyHitsMs)) ms (hits=\(manyHitsCount))
           少ヒット('zzqxvw wvktpq'):      \(String(format: "%.2f", fewHitsMs)) ms (hits=\(fewHitsCount))
           中ヒット('history'):            \(String(format: "%.2f", midHitsMs)) ms (hits=\(midHitsCount))
+          否定(1文字 '!e'):               \(String(format: "%.2f", negatedMs)) ms (hits=\(negatedCount))
         """)
 
         // 性能ゲート（指揮官指示: 16ms）は「本アプリのリリースビルド」を基準にしたものであり、
@@ -56,6 +63,7 @@ struct SearchIndexPerformanceTests {
         #expect(manyHitsMs < gateMs)
         #expect(fewHitsMs < gateMs)
         #expect(midHitsMs < gateMs)
+        #expect(negatedMs < gateMs)
     }
 
     private static func measureMs(_ block: () -> Void) -> Double {

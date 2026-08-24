@@ -19,25 +19,10 @@ public struct QueryTerm: Equatable {
         self.body = body
     }
 
-    /// `isNegated` まで考慮した最終的な真偽を返す（否定タームなら本体が一致しないときに true）。
-    public func matches(_ haystack: [Unicode.Scalar], matcher: FuzzyMatcher) -> Bool {
-        let bodyMatches: Bool
-        switch kind {
-        case .fuzzy:
-            bodyMatches = matcher.score(needle: body, haystack: haystack) != nil
-        case .prefix:
-            bodyMatches = Self.scalarsEqual(haystack, startingAt: 0, to: body)
-        case .suffix:
-            bodyMatches = Self.scalarsEqual(haystack, startingAt: haystack.count - body.count, to: body)
-        case .exact:
-            bodyMatches = haystack == body
-        }
-        return isNegated ? !bodyMatches : bodyMatches
-    }
-
     /// `haystack` の `startingAt` から `body.count` 分を、配列を新規に作らず要素ごとに
     /// 比較する（60,000件を毎回走査するため `Array(prefix/suffix(...))` のヒープ確保を避ける）。
-    private static func scalarsEqual(_ haystack: [Unicode.Scalar], startingAt start: Int, to body: [Unicode.Scalar]) -> Bool {
+    /// `SearchIndex` の性能最適化されたループから直接呼べるよう internal にしている。
+    static func scalarsEqual(_ haystack: [Unicode.Scalar], startingAt start: Int, to body: [Unicode.Scalar]) -> Bool {
         guard start >= 0, start + body.count <= haystack.count else { return false }
         for i in 0..<body.count where haystack[start + i] != body[i] {
             return false
