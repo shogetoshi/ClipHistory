@@ -19,7 +19,7 @@ public enum TOMLParseError: Error, LocalizedError {
         case .syntaxError(let line):
             return "\(line)行目: 構文を解釈できません"
         case .unsupportedValue(let line):
-            return "\(line)行目: サポートしていない値です（ダブルクォート文字列のみ対応しています）"
+            return "\(line)行目: サポートしていない値です（ダブルクォート文字列・数値のみ対応しています）"
         case .invalidString(let line):
             return "\(line)行目: 文字列リテラルが不正です"
         case .invalidTableHeader(let line):
@@ -32,7 +32,7 @@ public enum TOMLParseError: Error, LocalizedError {
 
 /// TOML の最小サブセットをパースする。外部依存を増やさない方針（design 13.1）のため
 /// 自前実装とし、サポート範囲は設定ファイルに必要なものだけに絞る
-/// （テーブルヘッダ・ダブルクォート文字列の `key = value` のみ）。
+/// （テーブルヘッダ・ダブルクォート文字列またはクォート無し数値リテラルの `key = value` のみ）。
 public enum TOMLParser {
     /// 「テーブル名 → （キー → 文字列値）」の2階層辞書を返す。
     /// テーブル名はドット区切りをそのまま連結した文字列（`[nvim.env]` → `"nvim.env"`）。
@@ -148,12 +148,45 @@ public enum TOMLParser {
             throw TOMLParseError.syntaxError(line: lineNumber)
         }
 
-        guard valuePart.hasPrefix("\"") else {
+        if valuePart.hasPrefix("\"") {
+            let value = try parseBasicString(valuePart, lineNumber: lineNumber)
+            return (key, value)
+        }
+
+        guard isNumberLiteral(valuePart) else {
             throw TOMLParseError.unsupportedValue(line: lineNumber)
         }
-        let value = try parseBasicString(valuePart, lineNumber: lineNumber)
 
-        return (key, value)
+        return (key, valuePart)
+    }
+
+    /// クォート無しの数値リテラル（整数・小数）かどうかを判定する。
+    /// 先頭符号 `+`/`-` は任意、1個以上の数字、任意で `.` + 1個以上の数字のみを許容する
+    /// （`1_000` や `0x1F`、`1e3` などはサポートしない）。
+    private static func isNumberLiteral(_ s: String) -> Bool {
+        let chars = Array(s)
+        var i = 0
+
+        if i < chars.count, chars[i] == "+" || chars[i] == "-" {
+            i += 1
+        }
+
+        let integerStart = i
+        while i < chars.count, chars[i].isASCII, chars[i].isNumber {
+            i += 1
+        }
+        guard i > integerStart else { return false }
+
+        if i < chars.count, chars[i] == "." {
+            i += 1
+            let fractionStart = i
+            while i < chars.count, chars[i].isASCII, chars[i].isNumber {
+                i += 1
+            }
+            guard i > fractionStart else { return false }
+        }
+
+        return i == chars.count
     }
 
     /// 文字列リテラルの外側にある最初の `=` の位置を探す。

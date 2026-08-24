@@ -56,12 +56,53 @@ struct TOMLParserTests {
         #expect(result["table"]?["c"] == "あ")
     }
 
-    @Test("未対応の値（数値）で throw する")
-    func unsupportedNumericValueThrows() {
+    @Test("クォート無しの整数値が文字列として取れる")
+    func unquotedIntegerValueIsStoredAsString() throws {
+        let result = try TOMLParser.parse("""
+        [table]
+        key = 123
+        """)
+        #expect(result["table"] == ["key": "123"])
+    }
+
+    @Test("クォート無しの負数・小数が文字列として取れる")
+    func unquotedNegativeAndFloatValuesAreStoredAsString() throws {
+        let result = try TOMLParser.parse("""
+        [table]
+        a = -3
+        b = +0.5
+        c = 2.75
+        """)
+        #expect(result["table"]?["a"] == "-3")
+        #expect(result["table"]?["b"] == "+0.5")
+        #expect(result["table"]?["c"] == "2.75")
+    }
+
+    @Test("数値の後ろに行コメントが付いていても読める")
+    func numericValueWithTrailingCommentIsParsed() throws {
+        let result = try TOMLParser.parse("""
+        [table]
+        timeout = 10  # 秒
+        """)
+        #expect(result["table"] == ["timeout": "10"])
+    }
+
+    @Test("未対応の値（真偽値）で throw する")
+    func unsupportedBooleanValueThrows() {
         #expect(throws: (any Error).self) {
             try TOMLParser.parse("""
             [table]
-            key = 123
+            key = true
+            """)
+        }
+    }
+
+    @Test("未対応の値（アンダースコア区切りの数値）で throw する")
+    func unsupportedUnderscoreNumberValueThrows() {
+        #expect(throws: (any Error).self) {
+            try TOMLParser.parse("""
+            [table]
+            key = 1_000
             """)
         }
     }
