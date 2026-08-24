@@ -14,10 +14,13 @@ final class AppComponents {
     private let clipboardMonitor: ClipboardMonitor
     private let maintenanceScheduler: MaintenanceScheduler
     private let pickerPanelController: PickerPanelController
+    private let clipboardCycler: ClipboardCycler
+    private let cycleNotificationController: CycleNotificationController
     private let hotKeyManager: HotKeyManager
 
     /// DB・BlobStore・HistoryStore・SearchIndex・ClipboardMonitor・MaintenanceScheduler・
-    /// パネル・ホットキーを組み立てる。DB を開けない等、初期化に失敗した場合は throw する。
+    /// パネル・クリップボード循環・循環通知・ホットキーを組み立てる。DB を開けない等、
+    /// 初期化に失敗した場合は throw する。
     init(settings: Settings) throws {
         self.settings = settings
 
@@ -44,9 +47,6 @@ final class AppComponents {
         self.searchIndex = index
 
         let monitor = ClipboardMonitor(settings: settings, historyStore: historyStore)
-        monitor.onInsert = { [weak index] entry in
-            index?.append(entry)
-        }
         self.clipboardMonitor = monitor
 
         // 起動時＋1時間ごとにパージ・BLOB GC・（必要なら）VACUUMを実行する（設計書8節）。
@@ -71,12 +71,36 @@ final class AppComponents {
         )
         self.pickerPanelController = controller
 
-        self.hotKeyManager = HotKeyManager { [weak controller] action in
+        let notificationController = CycleNotificationController()
+        self.cycleNotificationController = notificationController
+
+        let cycler = ClipboardCycler(historyStore: historyStore, timeout: Config.shared.cycleTimeout)
+        cycler.onCycled = { [weak notificationController] item, offset in
+            notificationController?.show(offset: offset, text: DisplayText.singleLine(item.previewText ?? ""))
+        }
+        cycler.onDidWritePasteboard = { [weak monitor] in
+            // 自前の書き戻しを新規コピーとして拾わせないため。これを忘れると
+            // キーを押した回数だけ履歴が汚れる。
+            monitor?.markCurrentChangeAsSeen()
+        }
+        self.clipboardCycler = cycler
+
+        // cycler 生成後にここで設定し直す: 自前の書き戻しは markCurrentChangeAsSeen() で
+        // 除外済みなので、ここへ来るのは外部からの新規コピーだけである。履歴の並びが変わり
+        // スナップショットが陳腐化するため、ポインタを破棄する。
+        monitor.onInsert = { [weak index, weak cycler] entry in
+            index?.append(entry)
+            cycler?.invalidate()
+        }
+
+        self.hotKeyManager = HotKeyManager { [weak controller, weak cycler] action in
             switch action {
             case .togglePanel:
                 controller?.toggle()
-            case .cyclePrevious, .cycleNext:
-                break
+            case .cyclePrevious:
+                cycler?.moveToPrevious()
+            case .cycleNext:
+                cycler?.moveToNext()
             }
         }
     }
