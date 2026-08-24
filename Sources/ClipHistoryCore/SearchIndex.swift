@@ -69,14 +69,28 @@ public final class SearchIndex {
     }
 
     /// クエリに対する検索結果を、マッチしたitem idのcreatedAt降順（同点はid降順）で返す。
+    /// `^`（先頭一致）・`$`（末尾一致）・`!`（否定）を含む fzf ライクな構文を解釈する
+    /// （`QueryParser` 参照）。
     public func search(query: String, limit: Int) -> [Int64] {
         let normalizedQuery = Normalizer.normalize(query)
-        let terms = tokenize(normalizedQuery)
+        let terms = QueryParser.parse(normalizedQuery)
 
         guard !terms.isEmpty else {
             // 空クエリは走査せず、createdAt 降順の先頭 limit 件を返す（設計書6.3）
             refineStack.removeAll()
             return recentIDs(limit: limit)
+        }
+
+        let isSpecial = QueryParser.containsSpecialSyntax(terms)
+
+        // 逐次絞り込みは「クエリを伸ばすとヒット集合が必ず縮む」ことを前提にしているが、
+        // 否定タームは `!a` → `!ab` でヒット集合が広がり、末尾一致は `ab$` → `ab$x` で
+        // 意味が変わって部分集合にならないため、この前提が成り立たない。そのため
+        // これらを含むクエリでは refineStack を一切参照・更新せず、常に entries 全件を
+        // 走査する（スタックの中身はそのまま残す。積まれているのは特殊構文を含まない
+        // クエリの段だけなので、後で通常クエリに戻ったときに正しく再利用できる）。
+        if isSpecial {
+            return Array(matchedIDs(in: entries, terms: terms, containsSpecialSyntax: true).prefix(limit))
         }
 
         // 1. スタックを、新クエリの前方拡張になっている段まで巻き戻す（設計書6.4）
@@ -98,22 +112,7 @@ public final class SearchIndex {
             candidates = entries
         }
 
-        var scored: [(id: Int64, createdAt: Int64)] = []
-        scored.reserveCapacity(candidates.count)
-
-        for entry in candidates {
-            if totalScore(entry: entry, terms: terms) != nil {
-                scored.append((entry.id, entry.createdAt))
-            }
-        }
-
-        // created_at 降順。同点は id 降順で解決（絞り込み中も一覧の並びは常に時刻順を保つ）
-        scored.sort { lhs, rhs in
-            if lhs.createdAt != rhs.createdAt { return lhs.createdAt > rhs.createdAt }
-            return lhs.id > rhs.id
-        }
-
-        let hitIDs = scored.map(\.id)
+        let hitIDs = matchedIDs(in: candidates, terms: terms, containsSpecialSyntax: isSpecial)
         refineStack.append(RefineFrame(query: normalizedQuery, ids: hitIDs))
 
         return Array(hitIDs.prefix(limit))
@@ -133,21 +132,71 @@ public final class SearchIndex {
         entryByID = Dictionary(uniqueKeysWithValues: entries.map { ($0.id, $0) })
     }
 
-    /// クエリをスペース区切りで分割する（設計書6.3「全ターム AND 条件」）。
-    /// クエリは呼び出し前に `Normalizer.normalize` 済みのため、連続空白は既に1個に
-    /// 圧縮されている。
-    private func tokenize(_ normalizedQuery: String) -> [[Unicode.Scalar]] {
-        normalizedQuery.split(separator: " ").map { Array($0.unicodeScalars) }
-    }
+    /// `candidates` のうち全ターム AND にマッチするものの id を、createdAt 降順
+    /// （同点は id 降順）で返す（AND条件、設計書6.3）。
+    ///
+    /// いずれの分岐も、`QueryTerm.matches` 経由の間接呼び出し・`allSatisfy` のクロージャ生成を
+    /// 避け、ループに入る前に本体・種別・否定フラグをローカル配列へ展開したうえで、
+    /// タイトなループで判定する（60,000件 × ターム数のホットループのため、設計書6.5の
+    /// 性能ゲート対応）。`containsSpecialSyntax` が false（全タームが非否定の `.fuzzy`）の
+    /// 場合はさらに単純化し、`matcher.score` だけを直接呼ぶ形にする。
+    private func matchedIDs(in candidates: [Entry], terms: [QueryTerm], containsSpecialSyntax: Bool) -> [Int64] {
+        var scored: [(id: Int64, createdAt: Int64)] = []
+        scored.reserveCapacity(candidates.count)
 
-    /// 全ターム AND のスコア合計。1タームでも不一致なら nil（AND条件、設計書6.3）。
-    private func totalScore(entry: Entry, terms: [[Unicode.Scalar]]) -> Int? {
-        var total = 0
-        for term in terms {
-            guard let s = matcher.score(needle: term, haystack: entry.scalars) else { return nil }
-            total += s
+        if containsSpecialSyntax {
+            let bodies = terms.map(\.body)
+            let kinds = terms.map(\.kind)
+            let negations = terms.map(\.isNegated)
+            let termCount = terms.count
+
+            for entry in candidates {
+                let scalars = entry.scalars
+                var allMatch = true
+                for i in 0..<termCount {
+                    let bodyMatches: Bool
+                    switch kinds[i] {
+                    case .fuzzy:
+                        bodyMatches = matcher.score(needle: bodies[i], haystack: scalars) != nil
+                    case .prefix:
+                        bodyMatches = QueryTerm.scalarsEqual(scalars, startingAt: 0, to: bodies[i])
+                    case .suffix:
+                        bodyMatches = QueryTerm.scalarsEqual(scalars, startingAt: scalars.count - bodies[i].count, to: bodies[i])
+                    case .exact:
+                        bodyMatches = scalars == bodies[i]
+                    }
+                    // matches = negations[i] ? !bodyMatches : bodyMatches の否定
+                    if negations[i] ? bodyMatches : !bodyMatches {
+                        allMatch = false
+                        break
+                    }
+                }
+                if allMatch {
+                    scored.append((entry.id, entry.createdAt))
+                }
+            }
+        } else {
+            let bodies = terms.map(\.body)
+            for entry in candidates {
+                let scalars = entry.scalars
+                var allMatch = true
+                for body in bodies where matcher.score(needle: body, haystack: scalars) == nil {
+                    allMatch = false
+                    break
+                }
+                if allMatch {
+                    scored.append((entry.id, entry.createdAt))
+                }
+            }
         }
-        return total
+
+        // created_at 降順。同点は id 降順で解決（絞り込み中も一覧の並びは常に時刻順を保つ）
+        scored.sort { lhs, rhs in
+            if lhs.createdAt != rhs.createdAt { return lhs.createdAt > rhs.createdAt }
+            return lhs.id > rhs.id
+        }
+
+        return scored.map(\.id)
     }
 
     /// `entries` は createdAt 昇順（tie: id昇順）で保持されている前提のため、末尾から

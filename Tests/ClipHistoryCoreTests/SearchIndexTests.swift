@@ -166,4 +166,143 @@ struct SearchIndexTests {
         let hits = index.search(query: "me", limit: 10)
         #expect(hits == [1])
     }
+
+    @Test("^ 先頭一致: ^foo は foo で始まるエントリにのみマッチする")
+    func caretMatchesPrefixOnly() {
+        let index = SearchIndex()
+        index.load([
+            makeEntry(id: 1, createdAt: 1_000, text: "foo bar"),
+            makeEntry(id: 2, createdAt: 2_000, text: "bar foo"),
+        ])
+
+        let hits = index.search(query: "^foo", limit: 10)
+        #expect(hits == [1])
+    }
+
+    @Test("$ 末尾一致: bar$ は bar で終わるエントリにのみマッチする")
+    func dollarMatchesSuffixOnly() {
+        let index = SearchIndex()
+        index.load([
+            makeEntry(id: 1, createdAt: 1_000, text: "foo bar"),
+            makeEntry(id: 2, createdAt: 2_000, text: "bar foo"),
+        ])
+
+        let hits = index.search(query: "bar$", limit: 10)
+        #expect(hits == [1])
+    }
+
+    @Test("^...$ 完全一致: search_key全体が一致するエントリにのみマッチする")
+    func caretDollarMatchesExactOnly() {
+        let index = SearchIndex()
+        index.load([
+            makeEntry(id: 1, createdAt: 1_000, text: "foo"),
+            makeEntry(id: 2, createdAt: 2_000, text: "foo bar"),
+        ])
+
+        let hits = index.search(query: "^foo$", limit: 10)
+        #expect(hits == [1])
+    }
+
+    @Test("! 否定: foo !bar は foo にマッチしbarにマッチしないエントリのみ返す")
+    func exclamationNegatesTermInAndCondition() {
+        let index = SearchIndex()
+        index.load([
+            makeEntry(id: 1, createdAt: 1_000, text: "foo baz"),
+            makeEntry(id: 2, createdAt: 2_000, text: "foo bar"),
+            makeEntry(id: 3, createdAt: 3_000, text: "baz qux"),
+        ])
+
+        let hits = index.search(query: "foo !bar", limit: 10)
+        #expect(hits == [1])
+    }
+
+    @Test("否定のみのクエリ: !foo はfooにマッチしないエントリ全部を最新順で返す")
+    func negationOnlyQueryReturnsNonMatchingEntries() {
+        let index = SearchIndex()
+        index.load([
+            makeEntry(id: 1, createdAt: 1_000, text: "foo"),
+            makeEntry(id: 2, createdAt: 2_000, text: "bar"),
+            makeEntry(id: 3, createdAt: 3_000, text: "baz"),
+        ])
+
+        let hits = index.search(query: "!foo", limit: 10)
+        #expect(hits == [3, 2])
+    }
+
+    @Test("記号だけのクエリ(!のみ・^のみ)は空クエリと同じ結果になる")
+    func symbolOnlyQueriesBehaveLikeEmptyQuery() {
+        let index = SearchIndex()
+        index.load([
+            makeEntry(id: 1, createdAt: 1_000, text: "aaa"),
+            makeEntry(id: 2, createdAt: 2_000, text: "bbb"),
+            makeEntry(id: 3, createdAt: 3_000, text: "ccc"),
+        ])
+
+        let emptyResult = index.search(query: "", limit: 2)
+        #expect(index.search(query: "!", limit: 2) == emptyResult)
+        #expect(index.search(query: "^", limit: 2) == emptyResult)
+    }
+
+    @Test("否定を含むクエリはキャッシュを迂回し、ヒット集合が広がる場合も直接検索と完全に一致する")
+    func negatedQueryBypassesCacheEvenWhenHitSetExpands() {
+        let entries = [
+            makeEntry(id: 1, createdAt: 1_000, text: "a"),
+            makeEntry(id: 2, createdAt: 2_000, text: "a b"),
+            makeEntry(id: 3, createdAt: 3_000, text: "a b c"),
+            makeEntry(id: 4, createdAt: 4_000, text: "xyz only"),
+        ]
+
+        let progressive = SearchIndex()
+        progressive.load(entries)
+        let step1 = progressive.search(query: "a", limit: 10)
+        let step2 = progressive.search(query: "a !b", limit: 10)
+        let step3 = progressive.search(query: "a !bc", limit: 10)
+
+        func direct(_ query: String) -> [Int64] {
+            let index = SearchIndex()
+            index.load(entries)
+            return index.search(query: query, limit: 10)
+        }
+
+        #expect(step1 == direct("a"))
+        #expect(step2 == direct("a !b"))
+        #expect(step3 == direct("a !bc"))
+        // a !b → a !bc でヒット集合が広がる（逐次絞り込みの前提が崩れる）ことを確認する
+        #expect(Set(step2).isSubset(of: Set(step3)))
+        #expect(step2 != step3)
+    }
+
+    @Test("否定＋先頭一致: !^foo は foo で始まるエントリを除外し、それ以外を最新順で返す")
+    func negatedPrefixExcludesEntriesStartingWithBody() {
+        let index = SearchIndex()
+        index.load([
+            makeEntry(id: 1, createdAt: 1_000, text: "foo bar"),
+            makeEntry(id: 2, createdAt: 2_000, text: "bar foo"),
+            makeEntry(id: 3, createdAt: 3_000, text: "baz qux"),
+        ])
+
+        let hits = index.search(query: "!^foo", limit: 10)
+        #expect(hits == [3, 2])
+    }
+
+    @Test("特殊構文を挟んだ後に通常クエリへ戻っても直接検索と一致する")
+    func returningToPlainQueryAfterSpecialSyntaxMatchesDirectSearch() {
+        let entries = [
+            makeEntry(id: 1, createdAt: 1_000, text: "foo one"),
+            makeEntry(id: 2, createdAt: 2_000, text: "afoo two"),
+            makeEntry(id: 3, createdAt: 3_000, text: "food three"),
+        ]
+
+        let progressive = SearchIndex()
+        progressive.load(entries)
+        _ = progressive.search(query: "fo", limit: 10)
+        _ = progressive.search(query: "^fo", limit: 10)
+        let progressiveResult = progressive.search(query: "foo", limit: 10)
+
+        let direct = SearchIndex()
+        direct.load(entries)
+        let directResult = direct.search(query: "foo", limit: 10)
+
+        #expect(progressiveResult == directResult)
+    }
 }
