@@ -47,6 +47,12 @@ public final class ClipboardMonitor {
         timer = nil
     }
 
+    /// 現在の `changeCount` を「既読」として記録する。
+    ///
+    /// `ClipboardCycler` の自前の書き戻しを新規コピーとして拾わせないために使う（Issue 0015）。
+    /// メインスレッドから、書き込み直後に呼ぶこと。
+    public func markCurrentChangeAsSeen() { lastChangeCount = pasteboard.changeCount }
+
     private func poll() {
         let current = pasteboard.changeCount
         guard current != lastChangeCount else { return }
