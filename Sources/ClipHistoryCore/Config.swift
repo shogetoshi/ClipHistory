@@ -6,10 +6,14 @@ public struct Config: Equatable {
     /// nvim 起動時に追加で渡す環境変数（TOML の `[nvim.env]` テーブル）。
     public var nvimEnvironment: [String: String]
 
-    public static let empty = Config(nvimEnvironment: [:])
+    /// クリップボード履歴を辿るポインタが揮発するまでの秒数（TOML の `[cycle]` テーブルの `timeout`）。
+    public var cycleTimeout: TimeInterval
 
-    public init(nvimEnvironment: [String: String] = [:]) {
+    public static let empty = Config(nvimEnvironment: [:], cycleTimeout: 10)
+
+    public init(nvimEnvironment: [String: String] = [:], cycleTimeout: TimeInterval = 10) {
         self.nvimEnvironment = nvimEnvironment
+        self.cycleTimeout = cycleTimeout
     }
 
     /// TOML テキストをパースして組み立てる。未知のテーブル・未知のキーはエラーにせず無視する
@@ -17,7 +21,20 @@ public struct Config: Equatable {
     public static func parse(_ text: String) throws -> Config {
         let tables = try TOMLParser.parse(text)
         let nvimEnvironment = tables["nvim.env"] ?? [:]
-        return Config(nvimEnvironment: nvimEnvironment)
+
+        // `timeout` の値が不正（数値に変換できない・0以下・非有限）でも throw はしない。
+        // 設定ファイルの些細な不備でアプリが起動不能になるのを避ける方針のため
+        // （design 13.3、および `loadDefault()` と同じ方針）、警告を残して既定値を使う。
+        var cycleTimeout: TimeInterval = 10
+        if let timeoutString = tables["cycle"]?["timeout"] {
+            if let timeout = Double(timeoutString), timeout > 0, timeout.isFinite {
+                cycleTimeout = timeout
+            } else {
+                NSLog("ClipHistory: Config.parse() invalid [cycle] timeout value: \(timeoutString), using default 10")
+            }
+        }
+
+        return Config(nvimEnvironment: nvimEnvironment, cycleTimeout: cycleTimeout)
     }
 
     /// ファイルが存在しなければ `empty`。パース失敗は throw。

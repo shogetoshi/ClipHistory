@@ -39,6 +39,51 @@ struct ConfigTests {
         #expect(config.nvimEnvironment == ["FOO": "bar"])
     }
 
+    @Test("[cycle] の timeout が cycleTimeout に読み込まれる")
+    func cycleTimeoutIsLoadedFromConfig() throws {
+        let config = try Config.parse("""
+        [cycle]
+        timeout = 30
+        """)
+        #expect(config.cycleTimeout == 30)
+    }
+
+    @Test("[cycle] が無い場合は cycleTimeout が既定値の10になる")
+    func cycleTimeoutDefaultsToTenWhenCycleTableIsAbsent() throws {
+        let config = try Config.parse("")
+        #expect(config.cycleTimeout == 10)
+    }
+
+    @Test("[cycle] の timeout が不正な値（0以下・非数値）の場合は既定値の10になる")
+    func cycleTimeoutFallsBackToDefaultOnInvalidValue() throws {
+        let zero = try Config.parse("""
+        [cycle]
+        timeout = 0
+        """)
+        #expect(zero.cycleTimeout == 10)
+
+        let negative = try Config.parse("""
+        [cycle]
+        timeout = -5
+        """)
+        #expect(negative.cycleTimeout == 10)
+
+        let nonNumeric = try Config.parse("""
+        [cycle]
+        timeout = "abc"
+        """)
+        #expect(nonNumeric.cycleTimeout == 10)
+    }
+
+    @Test("[cycle] の timeout に小数を指定できる")
+    func cycleTimeoutAcceptsDecimalValue() throws {
+        let config = try Config.parse("""
+        [cycle]
+        timeout = 2.5
+        """)
+        #expect(config.cycleTimeout == 2.5)
+    }
+
     @Test("存在しないファイルパスを load(from:) に渡すと empty が返る")
     func loadFromNonExistentFileReturnsEmpty() throws {
         let url = FileManager.default.temporaryDirectory
