@@ -261,11 +261,23 @@ final class PickerViewController: NSViewController {
 
     /// ⌘系のキー等価を、ビュー階層の探索より先に横取りして処理する（Issue 0006）。
     /// `PanelBackgroundView.keyEquivalentHandler` から呼ばれる。
-    /// 修飾キーが `.command` のみの押下だけを対象にする（⌘⇧E 等の意図しない組み合わせを
-    /// 誤って拾わないため）。
+    /// 修飾キーが `.control` のみの押下は、fzfライクな検索欄編集用の
+    /// `handleControlKeyEquivalent(_:)`（Issue 0014）に振り分ける。
+    /// 修飾キーが `.command` のみの押下だけを従来どおりここで処理する（⌘⇧E 等の意図しない
+    /// 組み合わせを誤って拾わないため）。
     private func handleKeyEquivalent(_ event: NSEvent) -> Bool {
-        guard event.type == .keyDown,
-              event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command else {
+        guard event.type == .keyDown else {
+            return false
+        }
+
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+
+        // Issue 0014: ⌃W / ⌃U（fzfライクな検索欄編集）は専用のハンドラに委ねる。
+        if modifiers == .control {
+            return handleControlKeyEquivalent(event)
+        }
+
+        guard modifiers == .command else {
             return false
         }
 
@@ -291,6 +303,73 @@ final class PickerViewController: NSViewController {
         default:
             return false
         }
+    }
+
+    /// 検索欄に対する ⌃W（直前の単語を削除）/ ⌃U（カーソル位置から行頭まで削除）を
+    /// fzfライクな操作感として実装する（Issue 0014）。
+    /// ⌃A / ⌃E / ⌃B / ⌃F / ⌃D / ⌃H / ⌃K / ⌃Y / ⌃P / ⌃N は macOS 標準のキーバインドが
+    /// そのまま fzf と同じ動作になるため、ここでは扱わない。
+    private func handleControlKeyEquivalent(_ event: NSEvent) -> Bool {
+        // nvim 編集モード中はキーを nvim 側に渡す必要があるため何もしない。
+        guard !isEditingInNvim else { return false }
+
+        // 検索フィールドが編集中（フィールドエディタがファーストレスポンダ）でなければ対象外とする。
+        // performKeyEquivalent はフォーカス位置に関係なくビュー階層全体に配られるため。
+        guard let textView = view.window?.firstResponder as? NSTextView,
+              searchField.currentEditor() === textView else {
+            return false
+        }
+
+        switch event.charactersIgnoringModifiers {
+        case "w":
+            deleteWordBackward(in: textView)
+            return true
+        case "u":
+            deleteToLineStart(in: textView)
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// ⌃W: カーソル直前の単語（空白区切り）を削除する（fzf/readline の unix-word-rubout 相当）。
+    /// 選択範囲がある場合はその選択範囲を削除するだけでよい。
+    private func deleteWordBackward(in textView: NSTextView) {
+        let selectedRange = textView.selectedRange()
+        let deleteRange: NSRange
+        if selectedRange.length > 0 {
+            deleteRange = selectedRange
+        } else {
+            let text = textView.string as NSString
+            var location = selectedRange.location
+            // カーソル直前の連続する空白を読み飛ばす。
+            while location > 0, CharacterSet.whitespaces.contains(Unicode.Scalar(text.character(at: location - 1)) ?? Unicode.Scalar(0)) {
+                location -= 1
+            }
+            let end = location
+            // さらに空白が現れるまで（＝単語の先頭まで）削除範囲を広げる。
+            while location > 0, !CharacterSet.whitespaces.contains(Unicode.Scalar(text.character(at: location - 1)) ?? Unicode.Scalar(0)) {
+                location -= 1
+            }
+            deleteRange = NSRange(location: location, length: end - location)
+        }
+        replaceText(in: textView, range: deleteRange, with: "")
+    }
+
+    /// ⌃U: カーソル位置から行頭までを削除する（fzf/readline の unix-line-discard 相当）。
+    /// 選択範囲がある場合はその選択範囲を削除するだけでよい。
+    private func deleteToLineStart(in textView: NSTextView) {
+        let selectedRange = textView.selectedRange()
+        let deleteRange = selectedRange.length > 0
+            ? selectedRange
+            : NSRange(location: 0, length: selectedRange.location)
+        replaceText(in: textView, range: deleteRange, with: "")
+    }
+
+    /// 取り消し（⌘Z）や `controlTextDidChange` の通知が壊れないよう、フィールドエディタの
+    /// テキスト編集APIを通じて置換する（`searchField.stringValue` の直接書き換えは避ける）。
+    private func replaceText(in textView: NSTextView, range: NSRange, with replacement: String) {
+        textView.insertText(replacement, replacementRange: range)
     }
 
     /// 選択中の項目を本物の nvim で編集するモードへ入る（Issue 0006）。
