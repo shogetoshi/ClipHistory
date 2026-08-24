@@ -71,8 +71,13 @@ final class AppComponents {
         )
         self.pickerPanelController = controller
 
-        self.hotKeyManager = HotKeyManager { [weak controller] in
-            controller?.toggle()
+        self.hotKeyManager = HotKeyManager { [weak controller] action in
+            switch action {
+            case .togglePanel:
+                controller?.toggle()
+            case .cyclePrevious, .cycleNext:
+                break
+            }
         }
     }
 
@@ -91,7 +96,11 @@ final class AppComponents {
 
     /// ホットキーの登録を試みる。失敗した場合は throw し、利用者への通知は呼び出し元に委ねる。
     func registerHotKey() throws {
-        try hotKeyManager.register(settings.hotKey)
+        try hotKeyManager.register([
+            .togglePanel: settings.hotKey,
+            .cyclePrevious: .cyclePrevious,
+            .cycleNext: .cycleNext
+        ])
     }
 
     /// 検索パネルの表示/非表示をトグルする。

@@ -19,17 +19,29 @@ public enum HotKeyError: Error, CustomStringConvertible {
     }
 }
 
+/// 登録可能なグローバルホットキーの種類。`rawValue` は Carbon の `EventHotKeyID.id` に
+/// そのまま使う（Issue 0015 で複数ホットキー対応するため導入）。
+public enum HotKeyAction: UInt32 {
+    /// 検索パネルの表示トグル
+    case togglePanel = 1
+    /// 1個前へ
+    case cyclePrevious = 2
+    /// 1個後へ
+    case cycleNext = 3
+}
+
 /// グローバルホットキーの登録・解除を担う。
 ///
 /// `NSEvent.addGlobalMonitorForEvents` はアクセシビリティ権限を要求するため採用しない
 /// （設計書 2節・12節）。代わりに Carbon の `RegisterEventHotKey` / `InstallEventHandler` を使う。
 /// Carbon 由来で非推奨扱いだが、権限不要という利点が大きく現行 macOS でも動作継続している。
+/// Issue 0015 で `togglePanel` に加え `cyclePrevious` / `cycleNext` を同時に登録できるようにした。
 public final class HotKeyManager {
-    /// ホットキー発火時に呼ばれるコールバック。
-    fileprivate let onHotKey: () -> Void
+    /// ホットキー発火時に呼ばれるコールバック。発火した `HotKeyAction` を受け取る。
+    fileprivate let onHotKey: (HotKeyAction) -> Void
 
     private var eventHandlerRef: EventHandlerRef?
-    private var hotKeyRef: EventHotKeyRef?
+    private var hotKeyRefs: [HotKeyAction: EventHotKeyRef] = [:]
 
     // アプリ内でユニークであればよい4文字コード（"ClHk" = ClipHistory Hotkey）。
     private static let signature: FourCharCode = {
@@ -39,9 +51,8 @@ public final class HotKeyManager {
         }
         return result
     }()
-    private static let hotKeyID = EventHotKeyID(signature: signature, id: 1)
 
-    public init(onHotKey: @escaping () -> Void) {
+    public init(onHotKey: @escaping (HotKeyAction) -> Void) {
         self.onHotKey = onHotKey
     }
 
@@ -51,9 +62,10 @@ public final class HotKeyManager {
         unregister()
     }
 
-    /// 指定した設定でホットキーを登録する。既に登録済みなら一旦解除してから登録し直す。
-    /// 他アプリとの衝突などで失敗した場合は `HotKeyError` を投げる。
-    public func register(_ config: HotKeyConfig) throws {
+    /// 指定した設定でホットキー群を登録する。既に登録済みなら一旦解除してから登録し直す。
+    /// 他アプリとの衝突などで失敗した場合は、それまでに登録できたホットキーとイベントハンドラを
+    /// すべてロールバックした上で `HotKeyError` を投げる。
+    public func register(_ bindings: [HotKeyAction: HotKeyConfig]) throws {
         unregister()
 
         var eventType = EventTypeSpec(
@@ -79,53 +91,74 @@ public final class HotKeyManager {
         }
         eventHandlerRef = handlerRef
 
-        var hotKeyRefLocal: EventHotKeyRef?
-        let registerStatus = RegisterEventHotKey(
-            config.keyCode,
-            config.modifiers,
-            Self.hotKeyID,
-            GetApplicationEventTarget(),
-            0,
-            &hotKeyRefLocal
-        )
-        guard registerStatus == noErr else {
-            // ハンドラだけが残らないよう、登録失敗時は必ずロールバックする
-            if let eventHandlerRef {
-                RemoveEventHandler(eventHandlerRef)
+        // 辞書の列挙順は不定なので、失敗時のエラーが毎回変わらないよう rawValue 昇順で登録する。
+        let orderedBindings = bindings.sorted { $0.key.rawValue < $1.key.rawValue }
+        for (action, config) in orderedBindings {
+            var hotKeyRefLocal: EventHotKeyRef?
+            let registerStatus = RegisterEventHotKey(
+                config.keyCode,
+                config.modifiers,
+                EventHotKeyID(signature: Self.signature, id: action.rawValue),
+                GetApplicationEventTarget(),
+                0,
+                &hotKeyRefLocal
+            )
+            guard registerStatus == noErr else {
+                // どれか1つでも登録に失敗したら、それまでに登録できたホットキーと
+                // イベントハンドラをすべてロールバックする。
+                unregister()
+                throw HotKeyError.registrationFailed(registerStatus)
             }
-            eventHandlerRef = nil
-            throw HotKeyError.registrationFailed(registerStatus)
+            hotKeyRefs[action] = hotKeyRefLocal
         }
-        hotKeyRef = hotKeyRefLocal
     }
 
-    /// 登録済みのホットキーとイベントハンドラを解除する。未登録状態で呼んでも安全（二重解除可）。
+    /// 登録済みの全ホットキーとイベントハンドラを解除する。未登録状態で呼んでも安全（二重解除可）。
     public func unregister() {
-        if let hotKeyRef {
+        for (_, hotKeyRef) in hotKeyRefs {
             UnregisterEventHotKey(hotKeyRef)
-            self.hotKeyRef = nil
         }
+        hotKeyRefs.removeAll()
         if let eventHandlerRef {
             RemoveEventHandler(eventHandlerRef)
             self.eventHandlerRef = nil
         }
     }
 
-    fileprivate func fireHotKey() {
-        onHotKey()
+    /// 発火した id に対応する `HotKeyAction` があればコールバックを呼び `true` を返す。
+    /// 未知の id の場合は何もせず `false` を返す。
+    @discardableResult
+    fileprivate func fireHotKey(id: UInt32) -> Bool {
+        guard let action = HotKeyAction(rawValue: id) else { return false }
+        onHotKey(action)
+        return true
     }
 }
 
 /// Carbon イベントハンドラの実体。C 関数ポインタとして渡す都合上、キャプチャを持たない
 /// トップレベル関数にする必要がある。`userData` には登録時に渡した `HotKeyManager` の
 /// unretained ポインタが入っており、ここから対象インスタンスを復元してコールバックを呼ぶ。
+/// どのホットキーが発火したかは `kEventParamDirectObject` から `EventHotKeyID` を取得して判別する。
 private func carbonHotKeyEventHandler(
     nextHandler: EventHandlerCallRef?,
     event: EventRef?,
     userData: UnsafeMutableRawPointer?
 ) -> OSStatus {
-    guard let userData else { return OSStatus(eventNotHandledErr) }
+    guard let userData, let event else { return OSStatus(eventNotHandledErr) }
+
+    var hotKeyID = EventHotKeyID()
+    let status = GetEventParameter(
+        event,
+        EventParamName(kEventParamDirectObject),
+        EventParamType(typeEventHotKeyID),
+        nil,
+        MemoryLayout<EventHotKeyID>.size,
+        nil,
+        &hotKeyID
+    )
+    guard status == noErr else { return OSStatus(eventNotHandledErr) }
+
     let manager = Unmanaged<HotKeyManager>.fromOpaque(userData).takeUnretainedValue()
-    manager.fireHotKey()
+    guard manager.fireHotKey(id: hotKeyID.id) else { return OSStatus(eventNotHandledErr) }
     return noErr
 }

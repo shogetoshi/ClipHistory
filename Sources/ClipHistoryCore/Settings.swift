@@ -14,6 +14,11 @@ public struct HotKeyConfig: Equatable {
         self.keyCode = keyCode
         self.modifiers = modifiers
     }
+
+    /// 1個前へ（⌃⌘P）。Issue 0015 で固定値とした（設定変更は将来）。
+    public static let cyclePrevious = HotKeyConfig(keyCode: 35, modifiers: 0x1100)
+    /// 1個後へ（⌃⌘N）。Issue 0015 で固定値とした（設定変更は将来）。
+    public static let cycleNext = HotKeyConfig(keyCode: 45, modifiers: 0x1100)
 }
 
 /// `UserDefaults` ベースの設定管理。設計書「10. 設定項目」の全キーを定義する。
