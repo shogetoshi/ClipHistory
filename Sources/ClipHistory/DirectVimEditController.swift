@@ -10,16 +10,20 @@ import ClipHistoryCore
 /// 自前で持つ。
 final class DirectVimEditController: NSObject {
     private static let panelSize = NSSize(width: 720, height: 420)
+    /// ウィンドウが内容に引きずられて縮小・拡大しすぎないための下限（`PickerPanelController` と同じ値）。
+    private static let panelMinSize = NSSize(width: 480, height: 320)
 
     private let panel: DirectVimEditPanel
     private let backgroundView: PanelBackgroundView
     private let nvimEditController: NvimEditModeController
+    private let settings: Settings
 
     /// ホットキー押下時点の frontmost アプリ。編集終了時にここへフォーカスを戻す
     /// （`PickerPanelController` 7.3 と同じ方針）。
     private var previousFrontmostApp: NSRunningApplication?
 
-    override init() {
+    init(settings: Settings) {
+        self.settings = settings
         let contentRect = NSRect(origin: .zero, size: Self.panelSize)
         panel = DirectVimEditPanel(contentRect: contentRect)
 
@@ -29,6 +33,9 @@ final class DirectVimEditController: NSObject {
 
         nvimEditController = NvimEditModeController(container: background)
         super.init()
+
+        panel.contentMinSize = Self.panelMinSize
+        panel.delegate = self
 
         background.keyEquivalentHandler = { [weak self] event in
             self?.handleKeyEquivalent(event) ?? false
@@ -102,21 +109,58 @@ final class DirectVimEditController: NSObject {
         pasteboard.setData(data, forType: NSPasteboard.PasteboardType(PasteboardTextType.utf8PlainText))
     }
 
-    /// アクティブスクリーン（マウスカーソルのあるスクリーン。取れなければ `NSScreen.main`）の
-    /// 中央に配置する。`PickerPanelController.positionPanel()` と異なり、位置・大きさの
-    /// 保存/復元は行わない（Issue 0020 のスコープ外）。
+    /// 保存済みの位置・大きさがあればそれを復元し、なければアクティブなスクリーン（マウスカーソルが
+    /// あるスクリーン）の中央上寄りに配置する。検索パネルから直接Vimモードに入った場合と
+    /// 同じウィンドウになるよう、`settings.panelFrame` を `PickerPanelController` と共有する
+    /// （Issue 0021）。いずれの場合もアクティブスクリーンの visibleFrame に収まるようクランプする。
     private func positionPanel() {
         guard let screen = activeScreen() else { return }
         let visibleFrame = screen.visibleFrame
-        let size = Self.panelSize
-        let x = visibleFrame.midX - size.width / 2
-        let y = visibleFrame.midY - size.height / 2
-        panel.setFrame(NSRect(x: x, y: y, width: size.width, height: size.height), display: false)
+        let frame: NSRect
+        if let savedFrame = settings.panelFrame {
+            frame = NSRect(origin: savedFrame.origin, size: savedFrame.size)
+        } else {
+            let size = Self.panelSize
+            let x = visibleFrame.midX - size.width / 2
+            // 「中央上寄り」: 画面上端から visibleFrame 高さの25%の位置にパネル上端がくるようにする
+            let y = visibleFrame.maxY - visibleFrame.height * 0.25 - size.height
+            frame = NSRect(x: x, y: max(y, visibleFrame.minY), width: size.width, height: size.height)
+        }
+        // アクティブスクリーンごとに visibleFrame は変わるため、表示のたびに上限を更新する。
+        panel.contentMaxSize = visibleFrame.size
+        panel.setFrame(clamped(frame, to: visibleFrame), display: false)
+    }
+
+    /// 矩形を `screenFrame` に収まるようクランプする（`PickerPanelController.clamped(_:to:)` と同じロジック）。
+    /// まず幅・高さを画面以下に切り詰め、そのうえで原点を画面内側に収まる範囲へ移動させる。
+    private func clamped(_ rect: NSRect, to screenFrame: NSRect) -> NSRect {
+        let width = min(rect.width, screenFrame.width)
+        let height = min(rect.height, screenFrame.height)
+        let x = min(max(rect.minX, screenFrame.minX), screenFrame.maxX - width)
+        let y = min(max(rect.minY, screenFrame.minY), screenFrame.maxY - height)
+        return NSRect(x: x, y: y, width: width, height: height)
     }
 
     private func activeScreen() -> NSScreen? {
         let mouseLocation = NSEvent.mouseLocation
         return NSScreen.screens.first { NSMouseInRect(mouseLocation, $0.frame, false) } ?? NSScreen.main
+    }
+}
+
+extension DirectVimEditController: NSWindowDelegate {
+    /// 利用者がパネルを移動したら位置を保存する（Issue 0021）。
+    /// `panel.isVisible` を見るのは、`positionPanel()` 自身の `setFrame` や非表示中の
+    /// フレーム変更で誤って保存してしまわないようにするため。
+    func windowDidMove(_ notification: Notification) {
+        guard panel.isVisible else { return }
+        settings.panelFrame = panel.frame
+    }
+
+    /// 利用者がパネルをリサイズしたら大きさを保存する（Issue 0021）。
+    /// `panel.isVisible` を見る理由は `windowDidMove(_:)` と同様である。
+    func windowDidResize(_ notification: Notification) {
+        guard panel.isVisible else { return }
+        settings.panelFrame = panel.frame
     }
 }
 

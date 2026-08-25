@@ -94,7 +94,7 @@ final class AppComponents {
             cycler?.invalidate()
         }
 
-        let directVimEdit = DirectVimEditController()
+        let directVimEdit = DirectVimEditController(settings: settings)
         self.directVimEditController = directVimEdit
 
         self.hotKeyManager = HotKeyManager { [weak controller, weak cycler, weak directVimEdit] action in
