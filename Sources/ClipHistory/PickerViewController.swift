@@ -477,6 +477,7 @@ final class PickerViewController: NSViewController {
         }
         previewPane.setContentHidden(editing)
         previewDividerHandle.isHidden = editing
+        searchField.isHidden = editing
     }
 }
 
