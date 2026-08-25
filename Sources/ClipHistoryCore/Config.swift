@@ -9,11 +9,15 @@ public struct Config: Equatable {
     /// クリップボード履歴を辿るポインタが揮発するまでの秒数（TOML の `[cycle]` テーブルの `timeout`）。
     public var cycleTimeout: TimeInterval
 
-    public static let empty = Config(nvimEnvironment: [:], cycleTimeout: 10)
+    /// 一覧・プレビューなど各所のフォントサイズの基準値（pt）（TOML の `[font]` テーブルの `size`）。
+    public var fontSize: Double
 
-    public init(nvimEnvironment: [String: String] = [:], cycleTimeout: TimeInterval = 10) {
+    public static let empty = Config(nvimEnvironment: [:], cycleTimeout: 10, fontSize: 12)
+
+    public init(nvimEnvironment: [String: String] = [:], cycleTimeout: TimeInterval = 10, fontSize: Double = 12) {
         self.nvimEnvironment = nvimEnvironment
         self.cycleTimeout = cycleTimeout
+        self.fontSize = fontSize
     }
 
     /// TOML テキストをパースして組み立てる。未知のテーブル・未知のキーはエラーにせず無視する
@@ -34,7 +38,19 @@ public struct Config: Equatable {
             }
         }
 
-        return Config(nvimEnvironment: nvimEnvironment, cycleTimeout: cycleTimeout)
+        // `size` の値が不正（数値に変換できない・0以下・非有限）でも throw はしない。
+        // 設定ファイルの些細な不備でアプリが起動不能になるのを避ける方針のため
+        // （design 13.3、および `loadDefault()` と同じ方針）、警告を残して既定値を使う。
+        var fontSize: Double = 12
+        if let fontSizeString = tables["font"]?["size"] {
+            if let size = Double(fontSizeString), size > 0, size.isFinite {
+                fontSize = size
+            } else {
+                NSLog("ClipHistory: Config.parse() invalid [font] size value: \(fontSizeString), using default 12")
+            }
+        }
+
+        return Config(nvimEnvironment: nvimEnvironment, cycleTimeout: cycleTimeout, fontSize: fontSize)
     }
 
     /// ファイルが存在しなければ `empty`。パース失敗は throw。

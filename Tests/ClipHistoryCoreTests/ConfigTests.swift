@@ -84,6 +84,51 @@ struct ConfigTests {
         #expect(config.cycleTimeout == 2.5)
     }
 
+    @Test("[font] の size が fontSize に読み込まれる")
+    func fontSizeIsLoadedFromConfig() throws {
+        let config = try Config.parse("""
+        [font]
+        size = 16
+        """)
+        #expect(config.fontSize == 16)
+    }
+
+    @Test("[font] が無い場合は fontSize が既定値の12になる")
+    func fontSizeDefaultsToTwelveWhenFontTableIsAbsent() throws {
+        let config = try Config.parse("")
+        #expect(config.fontSize == 12)
+    }
+
+    @Test("[font] の size が不正な値（0以下・非数値）の場合は既定値の12になる")
+    func fontSizeFallsBackToDefaultOnInvalidValue() throws {
+        let zero = try Config.parse("""
+        [font]
+        size = 0
+        """)
+        #expect(zero.fontSize == 12)
+
+        let negative = try Config.parse("""
+        [font]
+        size = -5
+        """)
+        #expect(negative.fontSize == 12)
+
+        let nonNumeric = try Config.parse("""
+        [font]
+        size = "abc"
+        """)
+        #expect(nonNumeric.fontSize == 12)
+    }
+
+    @Test("[font] の size に小数を指定できる")
+    func fontSizeAcceptsDecimalValue() throws {
+        let config = try Config.parse("""
+        [font]
+        size = 14.5
+        """)
+        #expect(config.fontSize == 14.5)
+    }
+
     @Test("存在しないファイルパスを load(from:) に渡すと empty が返る")
     func loadFromNonExistentFileReturnsEmpty() throws {
         let url = FileManager.default.temporaryDirectory
