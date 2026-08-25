@@ -70,10 +70,13 @@ final class PreviewLineNumberRulerView: NSRulerView {
         }
         // ガターの背景と、本文との境目を示す縦線を描く。テキストが空でも
         // ガター自体は常に表示されるべきなので、この後の早期 return より前に描く。
-        // 塗る範囲は再描画対象の rect でよいが、境界線の位置はビュー全体を基準にした
-        // bounds で計算しないと、部分再描画時に境界線がずれてしまう。
+        // drawHashMarksAndLabels(in:) に渡される rect はルーラーの bounds をはみ出す
+        // ことがあり、macOS 14 以降は NSView.clipsToBounds の既定が false なので、
+        // rect をそのまま塗ると本文の上まで塗りつぶしてしまう。そのため必ず bounds で
+        // 切り取ってから塗る。境界線の位置も、部分再描画でずれないよう bounds を
+        // 基準に計算する。
         TerminalTheme.contentBackground.setFill()
-        rect.fill()
+        rect.intersection(bounds).fill()
         let borderRect = NSRect(x: bounds.maxX - TerminalTheme.borderWidth, y: bounds.minY, width: TerminalTheme.borderWidth, height: bounds.height)
         TerminalTheme.border.setFill()
         borderRect.fill()
