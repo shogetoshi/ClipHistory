@@ -17,6 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 見た目をターミナル風に統一するため、システムのライト/ダーク設定に関わらず
         // アプリ全体をダークに固定する（Issue 0012）。
         NSApp.appearance = NSAppearance(named: .darkAqua)
+        // ⌘C などの標準的な編集キーを有効にするため、画面に出ないメインメニューを登録する（不具合修正）。
+        NSApp.mainMenu = MainMenu.make()
         setUpStatusItem()
         setUpComponents()
     }
