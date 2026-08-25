@@ -28,6 +28,8 @@ public enum HotKeyAction: UInt32 {
     case cyclePrevious = 2
     /// 1個後へ
     case cycleNext = 3
+    /// パネルを開かず直接nvim編集モードを開始する
+    case directVimEdit = 4
 }
 
 /// グローバルホットキーの登録・解除を担う。
