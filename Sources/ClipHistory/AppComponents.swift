@@ -101,6 +101,7 @@ final class AppComponents {
                 cycler?.moveToPrevious()
             case .cycleNext:
                 cycler?.moveToNext()
+            case .directVimEdit: break
             }
         }
     }
