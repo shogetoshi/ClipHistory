@@ -129,7 +129,9 @@ final class DirectVimEditPanel: NSPanel {
     init(contentRect: NSRect) {
         super.init(
             contentRect: contentRect,
-            styleMask: [.borderless, .nonactivatingPanel],
+            // ボーダーレスでも .resizable を付けることでウィンドウ端のドラッグによる
+            // リサイズが可能になる（Issue 0021）。
+            styleMask: [.borderless, .nonactivatingPanel, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -137,6 +139,8 @@ final class DirectVimEditPanel: NSPanel {
         isOpaque = false
         backgroundColor = .clear
         level = .floating
+        // 背景（マウスイベントを消費しないビュー上）のドラッグでパネルを移動できるようにする（Issue 0021）。
+        isMovableByWindowBackground = true
         hidesOnDeactivate = false
         isReleasedWhenClosed = false
         hasShadow = true
