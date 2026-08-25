@@ -62,7 +62,7 @@ public final class Settings {
             Key.resultLimit.rawValue: 200,
             Key.inlineBlobThreshold.rawValue: 64 * 1024,
             Key.skipConcealed.rawValue: true,
-            Key.previewWidthRatio.rawValue: 45.0 / 55.0
+            Key.previewWidthRatio.rawValue: 1.0
         ])
     }
 
@@ -82,7 +82,8 @@ public final class Settings {
         min(maxItemCountRange.upperBound, max(maxItemCountRange.lowerBound, value))
     }
 
-    /// 一覧とプレビューの幅比率（プレビュー幅 ÷ 一覧幅）。ドラッグでの境界移動を反映して保存する（Issue 0018）
+    /// 一覧とプレビューの幅比率（プレビュー幅 ÷ 一覧幅）。ドラッグでの境界移動を反映して保存する（Issue 0018）。
+    /// 既定は1.0（一覧:プレビュー=50:50）。
     public var previewWidthRatio: Double {
         get { Self.clampPreviewWidthRatio(defaults.double(forKey: Key.previewWidthRatio.rawValue)) }
         set { defaults.set(Self.clampPreviewWidthRatio(newValue), forKey: Key.previewWidthRatio.rawValue) }
