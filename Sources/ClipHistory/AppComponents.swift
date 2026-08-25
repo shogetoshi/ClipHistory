@@ -16,6 +16,7 @@ final class AppComponents {
     private let pickerPanelController: PickerPanelController
     private let clipboardCycler: ClipboardCycler
     private let cycleNotificationController: CycleNotificationController
+    private let directVimEditController: DirectVimEditController
     private let hotKeyManager: HotKeyManager
 
     /// DB・BlobStore・HistoryStore・SearchIndex・ClipboardMonitor・MaintenanceScheduler・
@@ -93,7 +94,10 @@ final class AppComponents {
             cycler?.invalidate()
         }
 
-        self.hotKeyManager = HotKeyManager { [weak controller, weak cycler] action in
+        let directVimEdit = DirectVimEditController()
+        self.directVimEditController = directVimEdit
+
+        self.hotKeyManager = HotKeyManager { [weak controller, weak cycler, weak directVimEdit] action in
             switch action {
             case .togglePanel:
                 controller?.toggle()
@@ -101,7 +105,8 @@ final class AppComponents {
                 cycler?.moveToPrevious()
             case .cycleNext:
                 cycler?.moveToNext()
-            case .directVimEdit: break
+            case .directVimEdit:
+                directVimEdit?.begin()
             }
         }
     }
@@ -124,7 +129,8 @@ final class AppComponents {
         try hotKeyManager.register([
             .togglePanel: settings.hotKey,
             .cyclePrevious: .cyclePrevious,
-            .cycleNext: .cycleNext
+            .cycleNext: .cycleNext,
+            .directVimEdit: .directVimEdit
         ])
     }
 
