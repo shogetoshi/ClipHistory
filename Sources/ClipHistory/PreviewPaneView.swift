@@ -9,6 +9,9 @@ final class PreviewPaneView: NSBox {
     private let scrollView = NSScrollView()
     private let textView = NSTextView()
     private let imageView = NSImageView()
+    // 行番号は本文には混ぜず、垂直ルーラーとして描画する（Issue 0016）。
+    // こうすることで本文だけをドラッグ選択・コピーでき、行番号がコピーに含まれない。
+    private var lineNumberRulerView: PreviewLineNumberRulerView?
 
     init() {
         super.init(frame: .zero)
@@ -44,6 +47,14 @@ final class PreviewPaneView: NSBox {
         scrollView.drawsBackground = true
         scrollView.backgroundColor = TerminalTheme.contentBackground
         scrollView.autohidesScrollers = true
+
+        // 行番号ガター（Issue 0016）。documentView 設定後に組み込む必要があるため、
+        // scrollView.documentView = textView の後にここで設定する。
+        let lineNumberRulerView = PreviewLineNumberRulerView(textView: textView, scrollView: scrollView)
+        scrollView.hasVerticalRuler = true
+        scrollView.verticalRulerView = lineNumberRulerView
+        scrollView.rulersVisible = true
+        self.lineNumberRulerView = lineNumberRulerView
 
         boxType = .custom
         fillColor = TerminalTheme.contentBackground
@@ -101,11 +112,15 @@ final class PreviewPaneView: NSBox {
             imageView.image = nil
             imageView.isHidden = true
             scrollView.isHidden = false
+            lineNumberRulerView?.updateWidth()
+            lineNumberRulerView?.needsDisplay = true
         case .empty:
             textView.string = ""
             imageView.image = nil
             imageView.isHidden = true
             scrollView.isHidden = false
+            lineNumberRulerView?.updateWidth()
+            lineNumberRulerView?.needsDisplay = true
         }
     }
 
