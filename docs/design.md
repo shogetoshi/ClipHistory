@@ -320,7 +320,7 @@ fzf と同じ手法を採る。
 | 種別 | `NSPanel`（`.nonactivatingPanel`、ボーダーレス、`level = .floating`。`styleMask` に `.resizable` を追加し、`isMovableByWindowBackground = true` としてマウスでの移動・リサイズに対応する） |
 | 位置・大きさ | `UserDefaults`（`panelFrame`）に保存した位置・大きさがあれば復元し、無ければ既定配置（アクティブなスクリーンの中央上寄り、720×420pt 程度）を使う。いずれもアクティブなスクリーンの `visibleFrame` に収まるようクランプしてから適用する |
 | サイズの安定 | 一覧・プレビュー各ビューの content compression resistance / content hugging を `.defaultLow` に下げ、内容の固有サイズによる拡大を抑止する。保険として `contentMinSize`（480×320）と `contentMaxSize`（アクティブなスクリーンの `visibleFrame` に追従）も設定する |
-| 構成 | 下部に検索フィールド（`NSSearchField`）。上部は左右分割し、左に結果一覧（`NSTableView`、55%）、右にプレビューペイン（45%）を配置する。中央の間隔は 12pt。比率は `NSLayoutConstraint` の multiplier で表現し、`NSSplitView` は使わない |
+| 構成 | 下部に検索フィールド（`NSSearchField`）。上部は左右分割し、左に結果一覧（`NSTableView`）、右にプレビューペイン（既定は 50% / 50%）を配置する。中央の間隔は 12pt。比率は `NSLayoutConstraint` の multiplier で表現し、`NSSplitView` は使わない。境界（間隔部分に重ねた `PreviewDividerHandleView`）はドラッグで左右に移動でき、比率は `UserDefaults`（`previewWidthRatio`）に保存して次回表示時にも復元する。`multiplier` は生成後に変更できないため、ドラッグのたびに `previewWidthConstraint` を作り直す。双方に 200pt の最小幅を確保する（Issue 0018） |
 | 並び順 | 一覧は最新（検索時は関連度が最上位のもの）を最下行に表示する。`ResultsProvider` は最新順（先頭が最上位）で返すため、`PickerViewModel` 側で反転して保持する。結果の再読み込み時の既定選択は最終行とし、その行までスクロールする |
 | 行の表示 | プレビュー本文（1〜2 行）、コピー元アプリ名、相対時刻 |
 | プレビュー | 読み取り専用の `NSTextView`（`NSScrollView` 内、`NSBox` で枠を描く）。フォントは等幅。一覧行が改行・連続空白を半角スペース1個に畳んだ1行表示（`DisplayText.singleLine`）なのに対し、プレビューは改行をそのまま描画する。折り返しは行わず、長い行は横スクロールバーで全体を確認する。左側には `NSScrollView` の垂直ルーラーとして行番号ガター（`PreviewLineNumberRulerView`）を表示する |
@@ -593,6 +593,7 @@ ad-hoc 署名のローカルアプリでは通知の認可が下りない可能�
 | `inlineBlobThreshold` | 64 KB | この値以下は DB 内 BLOB、超過は外部ファイル |
 | `skipConcealed` | true | 機密フラグ付きデータをスキップ |
 | `panelFrame` | なし | パネルの位置・大きさ。移動・リサイズ時に保存し、次回表示時に復元する。未保存時は既定配置を使う |
+| `previewWidthRatio` | 1.0（一覧:プレビュー=50:50） | 一覧とプレビューの幅比率（プレビュー幅 ÷ 一覧幅）。境界のドラッグ操作を反映して保存し、次回表示時に復元する（Issue 0018） |
 
 ### 10.2 設定ファイル
 
