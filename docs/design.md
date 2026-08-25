@@ -439,7 +439,7 @@ AppKit では ⌘C などの標準的な編集キーは `NSTextView` 自身が�
 | 起動契機 | **オンデマンド**。ブラウズ中は `previewTextView` のままとし、`⌘E` を押した項目だけターミナル層を前面に出す |
 | 起動方法 | `/bin/zsh -l -c "exec <nvim絶対パス> --listen <sock> -- <一時ファイル>"`。nvim の絶対パスは初回に `/bin/zsh -l -c "command -v nvim"` で解決してプロセス内にキャッシュする。設定ファイル（10.2）があれば `export` / `--cmd` / `-c` が加わる |
 | 編集対象 | `HistoryStore.loadFullText(itemID:)` で読んだ本文全体。`kind == .image` の項目は対象外 |
-| レイアウト | 編集モード中は一覧を隠し、`previewBox` を全幅へ拡張する |
+| レイアウト | 編集モード中は一覧と検索フィールドを隠し、`previewBox` を全幅へ拡張する（Issue 0019） |
 | 取り出し | `nvim --server <sock> --remote-expr 'writefile(getbufline(bufnr(<src>),1,"$"), <out>)'` を `Process` で叩く |
 | 書き戻し | `public.utf8-plain-text` の**1表現のみ** |
 | 終了時の挙動 | 利用者が nvim を終了したらパネルも閉じる。`:wq` など**保存して終了**した場合はその本文をクリップボードへ書き戻し、`:q` など**保存せず終了**した場合は何もしない |
