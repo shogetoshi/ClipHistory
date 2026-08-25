@@ -1,4 +1,5 @@
 import Cocoa
+import ClipHistoryCore
 
 /// アプリ全体をターミナル風のダーク配色に統一するための、色と等幅フォントの定義（Issue 0012）。
 /// 見た目のみを担い、レイアウトや挙動は持たない。
@@ -30,22 +31,22 @@ enum TerminalTheme {
 
     /// 一覧の本文用フォント。
     static var listFont: NSFont {
-        .monospacedSystemFont(ofSize: 12, weight: .regular)
+        .monospacedSystemFont(ofSize: CGFloat(Config.shared.fontSize), weight: .regular)
     }
 
     /// 一覧の補助情報用フォント。
     static var listSubtitleFont: NSFont {
-        .monospacedSystemFont(ofSize: 10, weight: .regular)
+        .monospacedSystemFont(ofSize: CGFloat(Config.shared.fontSize) - 2, weight: .regular)
     }
 
     /// 検索フィールド用フォント。
     static var searchFont: NSFont {
-        .monospacedSystemFont(ofSize: 13, weight: .regular)
+        .monospacedSystemFont(ofSize: CGFloat(Config.shared.fontSize) + 1, weight: .regular)
     }
 
     /// プレビュー本文・nvim ターミナル用フォント。
     static var previewFont: NSFont {
-        .monospacedSystemFont(ofSize: 12, weight: .regular)
+        .monospacedSystemFont(ofSize: CGFloat(Config.shared.fontSize), weight: .regular)
     }
 
     /// パネルの角丸半径。
