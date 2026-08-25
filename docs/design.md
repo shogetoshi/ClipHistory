@@ -556,7 +556,7 @@ ad-hoc 署名のローカルアプリでは通知の認可が下りない可能�
 | --- | --- |
 | 起動条件 | `NSPasteboard.general` にプレーンテキスト表現（`public.utf8-plain-text`）が無い場合（画像のみのコピー等）は何もせずビープのみ鳴らす。7.5 が `kind == .image` の項目を編集対象外とするのと同じ方針 |
 | 実装 | 検索パネルの nvim 編集（7.5）と同じ `NvimEditModeController` を、`PickerPanelController` とは独立した最小限のボーダーレスウィンドウ（`DirectVimEditController` / `DirectVimEditPanel`）に載せて使う。一覧・検索欄は持たない |
-| ウィンドウの移動・リサイズ | 7.1 と同様に `styleMask` に `.resizable` を追加し、`isMovableByWindowBackground = true` としてマウスでの移動・リサイズに対応する。位置・大きさは 7.1「位置・大きさ」と同じ `UserDefaults`（`panelFrame`）を共有するため、既定配置・クランプ・`contentMinSize` / `contentMaxSize`（7.1「サイズの安定」参照）も含めてどちらのウィンドウから動かしても双方に反映される（Issue 0021） |
+| ウィンドウの移動・リサイズ | 7.1 と同様に `styleMask` に `.resizable` を追加し、`isMovableByWindowBackground = true` としてマウスでの移動・リサイズに対応する。位置・大きさは 7.1「位置・大きさ」と同じ `UserDefaults`（`panelFrame`）を共有するため、既定配置・クランプ・`contentMinSize` / `contentMaxSize`（7.1「サイズの安定」参照）も含めてどちらのウィンドウから動かしても双方に反映される（Issue 0021）。ターミナルビュー（SwiftTerm）がマウスイベントを消費し `isMovableByWindowBackground` によるドラッグが成立しなくなるため、ターミナルは背景の各辺から 16pt（通常パネルの nvim 編集モード時のレイアウト、7.5 の `PickerViewController.loadView()` に揃えた値）内側のコンテナビューに載せ、周囲 16pt を背景のままドラッグ移動用の余白として残す |
 | 操作 | ⌘↩ で確定してクリップボードへ書き戻す、⌘. で破棄する。nvim を `:wq` で終了すれば確定、`:q` で終了すれば破棄になる点は 7.5 と同じ |
 | フォーカス | ホットキー押下時点の frontmost アプリを保持し、編集終了（確定・破棄いずれも）でそこへ復帰する（7.3 と同じ方針） |
 | 自動クローズ | 行わない。このウィンドウの状態は常に「編集中」であり、7.5「編集モード中の自動クローズ抑止」と同じ理由でフォーカス喪失時に閉じない |
