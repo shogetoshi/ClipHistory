@@ -27,15 +27,19 @@ final class PreviewPaneView: NSBox {
         // 等幅フォントにする。コピーしたコードや設定ファイルなどを崩さず、
         // インデントや桁位置が意図通りに見えるようにするため。
         textView.font = TerminalTheme.previewFont
+        // 折り返しなしにする。コピーしたコードや設定ファイルの桁位置を崩さず、
+        // 長い行は横スクロールで全体を見られるようにするため（Issue 0016）。
         textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = false
-        textView.autoresizingMask = [.width]
-        textView.textContainer?.widthTracksTextView = true
-        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        textView.isHorizontallyResizable = true
+        textView.autoresizingMask = []
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.widthTracksTextView = false
+        textView.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
 
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.documentView = textView
         scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = true
         // プレビューの下地をターミナル風の暗い色にする（Issue 0012）。
         scrollView.drawsBackground = true
         scrollView.backgroundColor = TerminalTheme.contentBackground
