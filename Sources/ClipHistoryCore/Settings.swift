@@ -31,6 +31,9 @@ public final class Settings {
     /// 履歴の保持件数上限として許容する範囲。設定画面の入力範囲もこれを参照する。
     public static let maxItemCountRange = 1...100_000
 
+    /// 一覧とプレビューの幅比率として許容する範囲（Issue 0018）。
+    public static let previewWidthRatioRange: ClosedRange<Double> = 0.3...3.0
+
     private let defaults: UserDefaults
 
     private enum Key: String {
@@ -44,6 +47,7 @@ public final class Settings {
         case inlineBlobThreshold
         case skipConcealed
         case panelFrame
+        case previewWidthRatio
     }
 
     public init(defaults: UserDefaults = .standard) {
@@ -57,7 +61,8 @@ public final class Settings {
             Key.maxImageBytes.rawValue: 20 * 1024 * 1024,
             Key.resultLimit.rawValue: 200,
             Key.inlineBlobThreshold.rawValue: 64 * 1024,
-            Key.skipConcealed.rawValue: true
+            Key.skipConcealed.rawValue: true,
+            Key.previewWidthRatio.rawValue: 1.0
         ])
     }
 
@@ -75,6 +80,17 @@ public final class Settings {
 
     private static func clampMaxItemCount(_ value: Int) -> Int {
         min(maxItemCountRange.upperBound, max(maxItemCountRange.lowerBound, value))
+    }
+
+    /// 一覧とプレビューの幅比率（プレビュー幅 ÷ 一覧幅）。ドラッグでの境界移動を反映して保存する（Issue 0018）。
+    /// 既定は1.0（一覧:プレビュー=50:50）。
+    public var previewWidthRatio: Double {
+        get { Self.clampPreviewWidthRatio(defaults.double(forKey: Key.previewWidthRatio.rawValue)) }
+        set { defaults.set(Self.clampPreviewWidthRatio(newValue), forKey: Key.previewWidthRatio.rawValue) }
+    }
+
+    private static func clampPreviewWidthRatio(_ value: Double) -> Double {
+        min(previewWidthRatioRange.upperBound, max(previewWidthRatioRange.lowerBound, value))
     }
 
     /// 呼び出しホットキー（既定 ⌥⌘V）

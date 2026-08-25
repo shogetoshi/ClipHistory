@@ -23,12 +23,15 @@ final class PickerViewController: NSViewController {
     private let historyStore: HistoryStore
     private let previewContentLoader: PreviewContentLoader
     private let viewModel: PickerViewModel
+    private let settings: Settings
 
     private let searchField = NSSearchField()
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
     // プレビューペイン（Issue 0002）。一覧の右側に選択中アイテムの本文を表示する。
     private let previewPane = PreviewPaneView()
+    // 一覧とプレビューの境界をドラッグでリサイズできるようにするハンドル（Issue 0018）。
+    private let previewDividerHandle = PreviewDividerHandleView()
     /// プレビューとして読み込む最大文字数。一覧より大きく取り、長文もある程度確認できるようにする。
     private static let previewMaxCharacters = 4000
 
@@ -46,6 +49,7 @@ final class PickerViewController: NSViewController {
         self.historyStore = historyStore
         self.previewContentLoader = PreviewContentLoader(historyStore: historyStore, maxCharacters: Self.previewMaxCharacters)
         self.viewModel = PickerViewModel(resultsProvider: resultsProvider, settings: settings)
+        self.settings = settings
         super.init(nibName: nil, bundle: nil)
 
         viewModel.onItemsChanged = { [weak self] in
@@ -153,11 +157,15 @@ final class PickerViewController: NSViewController {
         previewPane.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(previewPane)
 
+        // 一覧とプレビューの間の12ptの間隔に重ねて配置し、ドラッグで境界を移動できるようにする（Issue 0018）。
+        previewDividerHandle.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(previewDividerHandle)
+
         // 一覧55% / プレビュー45%。中央に12ptの間隔を空け、比率は multiplier で表現する。
         // 編集モード（Issue 0006）では previewPane を全幅に広げるため、切り替え対象の2制約は
         // ストアドプロパティとして保持し、後から isActive を切り替えられるようにする。
         previewLeadingNormalConstraint = previewPane.leadingAnchor.constraint(equalTo: scrollView.trailingAnchor, constant: 12)
-        previewWidthConstraint = previewPane.widthAnchor.constraint(equalTo: scrollView.widthAnchor, multiplier: 45.0 / 55.0)
+        previewWidthConstraint = previewPane.widthAnchor.constraint(equalTo: scrollView.widthAnchor, multiplier: CGFloat(settings.previewWidthRatio))
         // 編集モード用の全幅レイアウト。初期状態では使わないため非アクティブのまま保持する。
         previewLeadingFullWidthConstraint = previewPane.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16)
 
@@ -190,8 +198,20 @@ final class PickerViewController: NSViewController {
             previewLeadingNormalConstraint,
             previewPane.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -16),
             previewPane.bottomAnchor.constraint(equalTo: searchField.topAnchor, constant: -12),
-            previewWidthConstraint
+            previewWidthConstraint,
+
+            previewDividerHandle.topAnchor.constraint(equalTo: scrollView.topAnchor),
+            previewDividerHandle.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
+            previewDividerHandle.centerXAnchor.constraint(equalTo: scrollView.trailingAnchor, constant: 6),
+            previewDividerHandle.widthAnchor.constraint(equalToConstant: 16)
         ])
+
+        previewDividerHandle.onDrag = { [weak self] deltaX in
+            self?.handleDividerDrag(deltaX: deltaX)
+        }
+        previewDividerHandle.onDragEnded = { [weak self] in
+            self?.persistPreviewWidthRatio()
+        }
 
         view = root
     }
@@ -404,6 +424,42 @@ final class PickerViewController: NSViewController {
         nvimEditController.begin(text: text)
     }
 
+    /// previewWidthConstraint を指定した比率で作り直し、有効/無効状態を保ったまま差し替える。
+    /// NSLayoutConstraint の multiplier は生成後に変更できないため、ドラッグ操作のたびに
+    /// 制約オブジェクトごと作り直す必要がある（Issue 0018）。
+    private func rebuildPreviewWidthConstraint(ratio: CGFloat) {
+        let wasActive = previewWidthConstraint.isActive
+        previewWidthConstraint.isActive = false
+        previewWidthConstraint = previewPane.widthAnchor.constraint(equalTo: scrollView.widthAnchor, multiplier: ratio)
+        previewWidthConstraint.isActive = wasActive
+    }
+
+    /// 一覧・プレビュー双方に確保する最小幅（Issue 0018）。列の最小幅（120行目付近の
+    /// column.minWidth = 200）と揃え、極端に狭いペインにならないようにする。
+    private static let minPaneWidth: CGFloat = 200
+
+    /// ドラッグハンドルの移動量を、一覧とプレビューの幅比率へ反映する（Issue 0018）。
+    /// 一覧幅 + 12pt(間隔) + プレビュー幅 の合計は変わらないため、その合計を保ったまま
+    /// 一覧幅を最小幅でクランプし、プレビュー幅を「合計 - 間隔 - 一覧幅」として再計算する。
+    private func handleDividerDrag(deltaX: CGFloat) {
+        let totalContentWidth = scrollView.frame.width + 12 + previewPane.frame.width
+        guard totalContentWidth > 12 + Self.minPaneWidth * 2 else { return }
+
+        let proposedListWidth = scrollView.frame.width + deltaX
+        let maxListWidth = totalContentWidth - 12 - Self.minPaneWidth
+        let newListWidth = min(max(proposedListWidth, Self.minPaneWidth), maxListWidth)
+        let newPreviewWidth = totalContentWidth - 12 - newListWidth
+
+        rebuildPreviewWidthConstraint(ratio: newPreviewWidth / newListWidth)
+        view.layoutSubtreeIfNeeded()
+    }
+
+    /// ドラッグ終了時に、その時点の実測幅から比率を計算して保存する（Issue 0018）。
+    private func persistPreviewWidthRatio() {
+        guard scrollView.frame.width > 0 else { return }
+        settings.previewWidthRatio = Double(previewPane.frame.width / scrollView.frame.width)
+    }
+
     /// 通常レイアウトと nvim 編集用の全幅レイアウトを切り替える（Issue 0006）。
     /// プレビュー幅45%（約300pt）では nvim の編集領域として狭すぎるため、編集中は
     /// 一覧を隠して previewPane を全幅に広げる。
@@ -420,6 +476,7 @@ final class PickerViewController: NSViewController {
             scrollView.isHidden = false
         }
         previewPane.setContentHidden(editing)
+        previewDividerHandle.isHidden = editing
     }
 }
 
