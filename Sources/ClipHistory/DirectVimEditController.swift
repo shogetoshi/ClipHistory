@@ -15,6 +15,10 @@ final class DirectVimEditController: NSObject {
 
     private let panel: DirectVimEditPanel
     private let backgroundView: PanelBackgroundView
+    /// ターミナルを載せるコンテナ。`backgroundView` の各辺から16pt内側に配置し、
+    /// 周囲の余白を背景ドラッグ（`isMovableByWindowBackground`）によるウィンドウ移動に使えるようにする
+    /// （通常パネルの `PickerViewController.loadView()` の nvim 編集モード時のレイアウトと同じ16ptに揃えている、Issue 0021）。
+    private let terminalContainer = NSView()
     private let nvimEditController: NvimEditModeController
     private let settings: Settings
 
@@ -31,7 +35,16 @@ final class DirectVimEditController: NSObject {
         backgroundView = background
         panel.contentView = background
 
-        nvimEditController = NvimEditModeController(container: background)
+        background.addSubview(terminalContainer)
+        terminalContainer.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            terminalContainer.topAnchor.constraint(equalTo: background.topAnchor, constant: 16),
+            terminalContainer.leadingAnchor.constraint(equalTo: background.leadingAnchor, constant: 16),
+            terminalContainer.trailingAnchor.constraint(equalTo: background.trailingAnchor, constant: -16),
+            terminalContainer.bottomAnchor.constraint(equalTo: background.bottomAnchor, constant: -16)
+        ])
+
+        nvimEditController = NvimEditModeController(container: terminalContainer)
         super.init()
 
         panel.contentMinSize = Self.panelMinSize
