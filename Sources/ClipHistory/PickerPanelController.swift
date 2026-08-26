@@ -38,7 +38,10 @@ final class PickerPanelController: NSObject {
             self?.hide(restoringFocus: true)
         }
         pickerViewController.onCommitEditedText = { [weak self] text in
-            self?.commitEditedText(text)
+            self?.commitPlainText(text)
+        }
+        pickerViewController.onCommitJoinedText = { [weak self] text in
+            self?.commitPlainText(text)
         }
     }
 
@@ -94,13 +97,14 @@ final class PickerPanelController: NSObject {
         restoreFocus()
     }
 
-    /// nvim で編集したテキストを `NSPasteboard` へ書き戻す（Issue 0006）。
+    /// nvim で編集したテキスト（Issue 0006）と、複数選択を改行結合したテキスト（Issue 0023）を
+    /// `public.utf8-plain-text` の1表現だけで `NSPasteboard` へ書き戻す。
     ///
-    /// 元項目が RTF などの他表現を持っていても、プレーンテキストを編集した時点で
-    /// 他表現は編集内容と整合しなくなるため、`public.utf8-plain-text` の1表現だけを書き戻す。
+    /// 元項目が RTF などの他表現を持っていても、プレーンテキストとして編集・結合した時点で
+    /// 他表現は内容と整合しなくなるため、`public.utf8-plain-text` の1表現だけを書き戻す。
     /// `commit(_:)` と同様、書き戻しは抑制せず、`ClipboardMonitor` に
     /// 通常の変更検知として拾われ履歴の最新に追加されるのは意図どおりである。
-    private func commitEditedText(_ text: String) {
+    private func commitPlainText(_ text: String) {
         guard let data = text.data(using: .utf8) else {
             NSLog("ClipHistory: failed to write pasteboard: could not encode edited text as UTF-8")
             return
