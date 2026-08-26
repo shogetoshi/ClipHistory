@@ -12,6 +12,9 @@ final class PickerViewController: NSViewController {
     var onCancel: (() -> Void)?
     /// nvim で編集した内容を確定したときに呼ぶコールバック。クリップボードへの書き戻しは呼び出し元の責務。
     var onCommitEditedText: ((String) -> Void)?
+    /// 複数選択（Issue 0023）を改行結合した内容を確定したときに呼ぶコールバック。
+    /// クリップボードへの書き戻しは呼び出し元の責務。
+    var onCommitJoinedText: ((String) -> Void)?
 
     /// 編集モード中は `PickerPanelController` 側でフォーカス喪失による自動クローズを止めるため、
     /// 外から読めるようにする。
@@ -222,6 +225,8 @@ final class PickerViewController: NSViewController {
         // パネルが何らかの理由で編集モードのまま再表示された場合に備えた保険（Issue 0006）。
         nvimEditController.finish(commit: false)
         searchField.stringValue = ""
+        // パネルを開くたびに印はリセットする（Issue 0023）。
+        viewModel.clearMarks()
         viewModel.cancelPendingReload()
         viewModel.reload(query: "")
         view.window?.makeFirstResponder(searchField)
@@ -243,12 +248,36 @@ final class PickerViewController: NSViewController {
     }
 
     /// 選択中アイテムのプレビュー本文を更新する。
+    /// 印（Issue 0023）が1件以上ある場合は、選択行ではなく結合後のテキストを表示する。
     private func updatePreview() {
+        if viewModel.hasMarks {
+            let joined = joinedMarkedText()
+            let truncated = String(joined.prefix(Self.previewMaxCharacters))
+            previewPane.show(.text(truncated))
+            return
+        }
         guard let item = viewModel.item(at: tableView.selectedRow) else {
             previewPane.show(.empty)
             return
         }
         previewPane.show(previewContentLoader.content(for: item))
+    }
+
+    /// 印を付けたアイテム（Issue 0023）の本文を順に読み込み、改行で結合して返す。
+    /// 本文が読めなかったアイテムは結合対象から除外する。
+    private func joinedMarkedText() -> String {
+        var texts: [String] = []
+        for item in viewModel.markedItems {
+            do {
+                guard let loaded = try historyStore.loadFullText(itemID: item.id) else {
+                    continue
+                }
+                texts.append(loaded)
+            } catch {
+                NSLog("ClipHistory: HistoryStore.loadFullText(itemID:) failed: \(error)")
+            }
+        }
+        return MarkedSelection.joinedText(texts)
     }
 
     private func moveSelection(by delta: Int) {
@@ -260,6 +289,11 @@ final class PickerViewController: NSViewController {
     }
 
     private func commitSelection() {
+        // 印（Issue 0023）が1件以上あれば、結合後の内容を確定として渡す。
+        if viewModel.hasMarks {
+            onCommitJoinedText?(joinedMarkedText())
+            return
+        }
         guard let item = viewModel.item(at: tableView.selectedRow) else { return }
         onCommit?(item)
     }
@@ -502,7 +536,8 @@ extension PickerViewController: NSTableViewDelegate {
         cell.configure(
             preview: display.preview,
             sourceAppName: display.sourceAppName,
-            relativeTime: display.relativeTime
+            relativeTime: display.relativeTime,
+            isMarked: display.isMarked
         )
         return cell
     }
@@ -540,6 +575,17 @@ extension PickerViewController: NSSearchFieldDelegate {
             return true
         case #selector(NSResponder.insertNewline(_:)):
             commitSelection()
+            return true
+        case #selector(NSResponder.insertTab(_:)):
+            // 検索フィールドにフォーカスがある状態で tab が来るため、Enter や ↑↓ と同じ経路で
+            // ここで受け、選択行への印付け（Issue 0023）に使う。標準のフォーカス移動（次の
+            // キービューへの遷移）を起こさないよう、常に true を返す。
+            if viewModel.toggleMark(at: tableView.selectedRow) {
+                tableView.reloadData(forRowIndexes: IndexSet(integer: tableView.selectedRow), columnIndexes: IndexSet(integer: 0))
+                updatePreview()
+            } else {
+                NSSound.beep()
+            }
             return true
         case #selector(NSResponder.cancelOperation(_:)):
             onCancel?()
