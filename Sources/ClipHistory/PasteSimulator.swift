@@ -28,6 +28,13 @@ final class PasteSimulator {
             return false
         }
 
+        // ⌘⌃V のホットキー押下中は物理的に ⌃ / ⌘ が押されたままなので、合成イベント送出直後の
+        // 抑止期間中は実キーボードのイベントを混ぜないようにする（Issue 0022）。
+        source.setLocalEventsFilterDuringSuppressionState(
+            [.permitLocalMouseEvents, .permitSystemDefinedEvents],
+            state: .eventSuppressionStateSuppressionInterval
+        )
+
         guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: true),
               let keyUp = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: false) else {
             NSLog("ClipHistory: failed to create CGEvent for paste simulation")
@@ -37,8 +44,9 @@ final class PasteSimulator {
         keyDown.flags = .maskCommand
         keyUp.flags = .maskCommand
 
-        keyDown.post(tap: .cghidEventTap)
-        keyUp.post(tap: .cghidEventTap)
+        // HID レイヤへの注入ではなく、現在のログインセッションのイベントストリームへ注入する（Issue 0022）。
+        keyDown.post(tap: .cgAnnotatedSessionEventTap)
+        keyUp.post(tap: .cgAnnotatedSessionEventTap)
 
         return true
     }
