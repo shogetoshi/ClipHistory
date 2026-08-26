@@ -6,6 +6,8 @@ struct HistoryRowDisplay {
     let preview: String
     let sourceAppName: String
     let relativeTime: String
+    /// tabキーによる複数選択で印が付いているか（Issue 0023）。
+    let isMarked: Bool
 }
 
 /// 検索パネルの一覧が持つ状態（検索結果と、行の表示文字列）を担う。
@@ -19,6 +21,10 @@ final class PickerViewModel {
     private let settings: Settings
 
     private(set) var items: [HistoryItem] = []
+
+    /// tabキーによる複数選択（印付け）の状態（Issue 0023）。検索の絞り込みが変わっても
+    /// 印は保つ設計のため、`reload(query:)` では触れない。
+    private var markedSelection = MarkedSelection()
 
     /// 打鍵ごとの reload 実行を抑えるデバウンス用タイマー（設計書6.5、40ms）。
     /// 検索自体はメインスレッド同期実行のままだが、これにより高速な連続入力時の
@@ -88,7 +94,28 @@ final class PickerViewModel {
         return HistoryRowDisplay(
             preview: DisplayText.singleLine(item.previewText ?? ""),
             sourceAppName: item.sourceAppName ?? "不明なアプリ",
-            relativeTime: relativeTime
+            relativeTime: relativeTime,
+            isMarked: markedSelection.contains(itemID: item.id)
         )
+    }
+
+    /// 印を付けたアイテム（印を付けた順）（Issue 0023）。
+    var markedItems: [HistoryItem] { markedSelection.items }
+
+    /// 印が1件以上付いているか（Issue 0023）。
+    var hasMarks: Bool { !markedSelection.isEmpty }
+
+    /// 指定行のアイテムの印をトグルする（Issue 0023）。行が範囲外の場合や、
+    /// 画像アイテム（テキストとして結合できないため。⌘E の nvim 編集が画像を
+    /// 対象外にしているのと同じ方針）の場合は何もせず `false` を返す。
+    func toggleMark(at row: Int) -> Bool {
+        guard let item = item(at: row), item.kind != .image else { return false }
+        markedSelection.toggle(item)
+        return true
+    }
+
+    /// 印を全て取り除く（Issue 0023）。
+    func clearMarks() {
+        markedSelection.removeAll()
     }
 }

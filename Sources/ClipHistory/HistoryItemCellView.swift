@@ -8,6 +8,8 @@ import Cocoa
 final class HistoryItemCellView: NSTableCellView {
     private let previewLabel = NSTextField(labelWithString: "")
     private let subtitleLabel = NSTextField(labelWithString: "")
+    /// tabキーによる複数選択の印（">"）を表示するラベル（Issue 0023）。
+    private let markLabel = NSTextField(labelWithString: "")
 
     /// セル右側の余白。オーバーレイ表示される（＝レイアウトに幅を割かない）スクロールバーが
     /// 一時的に前面に出た際、本文の末尾に重なって読めなくなるのを避けるための空き（修正1）。
@@ -16,6 +18,9 @@ final class HistoryItemCellView: NSTableCellView {
     /// 13pt フォントの2行分がちょうど収まる高さで、これより長い内容は
     /// `maximumNumberOfLines` / `truncatesLastVisibleLine` により省略記号で切られる。
     private static let previewHeight: CGFloat = 34
+    /// 印の桁の幅。印が付いていない行でも常にこの幅を確保しておくことで、印の有無によって
+    /// 本文の開始位置がずれず、一覧全体が読みやすくなる（Issue 0023）。
+    private static let markWidth: CGFloat = 12
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -28,6 +33,11 @@ final class HistoryItemCellView: NSTableCellView {
     }
 
     private func setUp() {
+        markLabel.translatesAutoresizingMaskIntoConstraints = false
+        markLabel.font = TerminalTheme.listFont
+        markLabel.textColor = TerminalTheme.accent
+        addSubview(markLabel)
+
         previewLabel.translatesAutoresizingMaskIntoConstraints = false
         previewLabel.lineBreakMode = .byTruncatingTail
         previewLabel.maximumNumberOfLines = 2
@@ -54,19 +64,26 @@ final class HistoryItemCellView: NSTableCellView {
         // 同じ崩れが再発しなくなる。プレビュー側は高さを明示的に固定し、収まらない分は
         // truncatesLastVisibleLine で省略記号にする（サブタイトル側へのはみ出しを起こさない）。
         NSLayoutConstraint.activate([
+            markLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
+            markLabel.widthAnchor.constraint(equalToConstant: Self.markWidth),
+            markLabel.firstBaselineAnchor.constraint(equalTo: previewLabel.firstBaselineAnchor),
+
             previewLabel.topAnchor.constraint(equalTo: topAnchor, constant: 4),
-            previewLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
+            previewLabel.leadingAnchor.constraint(equalTo: markLabel.trailingAnchor, constant: 4),
             previewLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Self.trailingInset),
             previewLabel.heightAnchor.constraint(equalToConstant: Self.previewHeight),
 
-            subtitleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
+            subtitleLabel.leadingAnchor.constraint(equalTo: markLabel.trailingAnchor, constant: 4),
             subtitleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Self.trailingInset),
             subtitleLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4)
         ])
     }
 
-    func configure(preview: String, sourceAppName: String, relativeTime: String) {
+    func configure(preview: String, sourceAppName: String, relativeTime: String, isMarked: Bool) {
         previewLabel.stringValue = preview.isEmpty ? "(空)" : preview
         subtitleLabel.stringValue = "\(sourceAppName) ・ \(relativeTime)"
+        // セルは NSTableView の再利用で使い回されるため、印が付いていない場合も
+        // 必ず空文字で上書きする（前の行の印が残らないようにする）（Issue 0023）。
+        markLabel.stringValue = isMarked ? ">" : ""
     }
 }

@@ -502,7 +502,8 @@ extension PickerViewController: NSTableViewDelegate {
         cell.configure(
             preview: display.preview,
             sourceAppName: display.sourceAppName,
-            relativeTime: display.relativeTime
+            relativeTime: display.relativeTime,
+            isMarked: display.isMarked
         )
         return cell
     }
