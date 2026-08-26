@@ -556,8 +556,8 @@ ad-hoc 署名のローカルアプリでは通知の認可が下りない可能�
 | 項目 | 仕様 |
 | --- | --- |
 | 操作 | ⌘⌃V を押すごとに「今のクリップボード内容を貼り付け → クリップボードを1個前へ」を繰り返す。ポインタ・揮発時間（`[cycle] timeout`、既定10秒）・HUD 通知は 7.6 の `ClipboardCycler` をそのまま使うため、⌃⌘P / ⌃⌘N と同じスナップショットで動く |
-| 貼り付けの実装 | `PasteSimulator` が `CGEvent` で `kVK_ANSI_V` の keyDown / keyUp を `flags = .maskCommand` として合成し、`post(tap: .cghidEventTap)` で ⌘V を発行する |
-| 権限 | キーイベントの合成にはアクセシビリティ権限（`AXIsProcessTrusted()`）が必要。未許可の場合は `AXIsProcessTrustedWithOptions` に `kAXTrustedCheckOptionPrompt` を渡し、システム標準の非ブロッキングな許可誘導ダイアログを出すのみで貼り付けは行わない（`NSAlert` 等の同期モーダルは使わない）。9節の「権限は一切不要」の方針の唯一の例外であり、この権限を与えなくても本機能以外は一切制限されない |
+| 貼り付けの実装 | `PasteSimulator` が `CGEventSource(stateID: .combinedSessionState)` 生成直後に `setLocalEventsFilterDuringSuppressionState` で抑止期間中の実キーボードイベント混入を防ぎ（混ざると貼り付け先が ⌘V と解釈できず貼り付けが行われないため）、`kVK_ANSI_V` の keyDown / keyUp を `flags = .maskCommand` として合成し、`post(tap: .cgAnnotatedSessionEventTap)` で ⌘V を発行する |
+| 権限 | キーイベントの合成にはアクセシビリティ権限（`AXIsProcessTrusted()`）が必要。未許可の場合は `AXIsProcessTrustedWithOptions` に `kAXTrustedCheckOptionPrompt` を渡し、システム標準の非ブロッキングな許可誘導ダイアログを出すのみで貼り付けは行わない（`NSAlert` 等の同期モーダルは使わない）。9節の「権限は一切不要」の方針の唯一の例外であり、この権限を与えなくても本機能以外は一切制限されない。ad-hoc 署名では再ビルドごとに許可が失効するため、`scripts/setup-signing-cert.sh` で作る自己署名証明書での署名を前提とする（13.1・13.5 参照） |
 | 貼り付けとクリップボード書き換えの順序 | `PasteSimulator.paste()` の後、0.15 秒待ってから `ClipboardCycler.moveToPrevious()` でクリップボードを書き換える。待たずに書き換えると、貼り付け先のアプリが ⌘V を処理し終える前に内容が次の項目へ変わり、貼り付けられる内容が意図した項目からずれる |
 | 待機中の再入 | 0.15 秒の待機中に再度ホットキーが押されても無視する。同じ内容の二重貼り付けになるだけで、ポインタは進めない |
 | 貼り付けに失敗した場合 | クリップボードを進めない。貼り付けていないのに内容だけ変わる状態を避けるため |
@@ -815,7 +815,7 @@ v1 のスコープはフェーズ 0〜4。データスキーマのみ最初か�
 
 | 項目 | 決定 |
 | --- | --- |
-| ビルド方式 | SwiftPM の実行可能ターゲット + `Makefile` で `.app` バンドルを組み立て、ad-hoc 署名。`.xcodeproj` は作らない |
+| ビルド方式 | SwiftPM の実行可能ターゲット + `Makefile` で `.app` バンドルを組み立てる。`.xcodeproj` は作らない。署名は `CODESIGN_IDENTITY`（既定 `ClipHistory Dev`）の証明書がキーチェーンにあればそれで署名し、無ければ ad-hoc 署名にフォールバックする。証明書は `scripts/setup-signing-cert.sh` で作成する |
 | 外部依存 | [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) 1.20.0 のみ。他は `SQLite3` / AppKit / SwiftUI / Carbon / CryptoKit などOS同梱。当初は「ゼロ」を方針としていたが、プレビューを本物の nvim で編集する要件（7.5）は PTY を張ったターミナルエミュレータ無しには満たせず、自前実装は工数が見合わないため Issue 0006 でこの1件だけ受け入れた |
 | 言語モード | `swift-tools-version:6.0` + `swiftLanguageMode(.v5)`（strict concurrency は使わない） |
 | 最低OS | macOS 13 (Ventura) |
@@ -914,4 +914,4 @@ RTF / HTML のプレビュー描画。いずれもリッチテキスト対応に
 | ホットキーの変更UI | 設定画面ではホットキーを読み取り専用表示とし、キー入力を記録するレコーダUIはv1のスコープ外 |
 | nvim 編集モードの日本語 IME | `.nonactivatingPanel` 上の SwiftTerm で日本語 IME が期待どおり動くかは未検証。動かない場合でも英数の編集は成立するため、v1 では制約として残す |
 | GUI操作の自動検証 | パネル表示・キー操作・書き戻しといった対話的挙動は、ターミナルにアクセシビリティ権限がないため自動検証できない。合成キー送出は利用者のフォーカスを奪うため行わない。**手動確認が必要な領域として残る** |
-| 再ビルド後のアクセシビリティ権限失効 | 本アプリは ad-hoc 署名のため、再ビルドで署名（cdhash）が変わるとアクセシビリティ権限の許可が失効し、連続貼り付け（7.7）が再度の許可を必要とする場合がある |
+| 再ビルド後のアクセシビリティ権限失効 | ad-hoc 署名では署名要件がバイナリの cdhash に紐づくため、再ビルドのたびに権限の許可が失効し、System Settings でトグルを付け直しても解消しない（実機で確認済み）。`scripts/setup-signing-cert.sh` の自己署名証明書で署名すれば署名要件がバンドルIDと証明書に固定され、許可は一度で済む。証明書が無い環境では ad-hoc にフォールバックするため、この制約が残る |
