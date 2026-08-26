@@ -21,6 +21,8 @@ public struct HotKeyConfig: Equatable {
     public static let cycleNext = HotKeyConfig(keyCode: 45, modifiers: 0x1100)
     /// 直接Vim編集モードへ入る（⌘⌃⇧C）。Issue 0020 で固定値とした（設定変更は将来）。
     public static let directVimEdit = HotKeyConfig(keyCode: 8, modifiers: 0x1300)
+    /// 連続貼り付け（⌘⌃V）。Issue 0022 で固定値とした（設定変更は将来）。
+    public static let pasteAndCyclePrevious = HotKeyConfig(keyCode: 9, modifiers: 0x1100)
 }
 
 /// `UserDefaults` ベースの設定管理。設計書「10. 設定項目」の全キーを定義する。

@@ -17,6 +17,7 @@ final class AppComponents {
     private let clipboardCycler: ClipboardCycler
     private let cycleNotificationController: CycleNotificationController
     private let directVimEditController: DirectVimEditController
+    private let continuousPasteController: ContinuousPasteController
     private let hotKeyManager: HotKeyManager
 
     /// DB・BlobStore・HistoryStore・SearchIndex・ClipboardMonitor・MaintenanceScheduler・
@@ -97,7 +98,10 @@ final class AppComponents {
         let directVimEdit = DirectVimEditController(settings: settings)
         self.directVimEditController = directVimEdit
 
-        self.hotKeyManager = HotKeyManager { [weak controller, weak cycler, weak directVimEdit] action in
+        let continuousPaste = ContinuousPasteController(cycler: cycler)
+        self.continuousPasteController = continuousPaste
+
+        self.hotKeyManager = HotKeyManager { [weak controller, weak cycler, weak directVimEdit, weak continuousPaste] action in
             switch action {
             case .togglePanel:
                 controller?.toggle()
@@ -107,6 +111,8 @@ final class AppComponents {
                 cycler?.moveToNext()
             case .directVimEdit:
                 directVimEdit?.begin()
+            case .pasteAndCyclePrevious:
+                continuousPaste?.pasteAndCycle()
             }
         }
     }
@@ -130,7 +136,8 @@ final class AppComponents {
             .togglePanel: settings.hotKey,
             .cyclePrevious: .cyclePrevious,
             .cycleNext: .cycleNext,
-            .directVimEdit: .directVimEdit
+            .directVimEdit: .directVimEdit,
+            .pasteAndCyclePrevious: .pasteAndCyclePrevious
         ])
     }
 

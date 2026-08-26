@@ -30,6 +30,8 @@ public enum HotKeyAction: UInt32 {
     case cycleNext = 3
     /// パネルを開かず直接nvim編集モードを開始する
     case directVimEdit = 4
+    /// 今の内容を貼り付けて、クリップボードを1個前へ進める（連続貼り付け）
+    case pasteAndCyclePrevious = 5
 }
 
 /// グローバルホットキーの登録・解除を担う。
