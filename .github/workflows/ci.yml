@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    # swift-tools-version:6.0 のため Swift 6 系のツールチェインが必要。
+    # macos-14 の既定 Xcode は Swift 5.10 で解決に失敗するため macos-15 を使う。
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ツールチェインの確認
+        run: swift --version
+
+      - name: テスト
+        run: swift test
+
+      # .app バンドルの組み立てまで通ることを確認する。
+      # 署名証明書が無い環境なので Makefile 側で ad-hoc 署名にフォールバックする。
+      - name: .app バンドルのビルド
+        run: make app
