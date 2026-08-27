@@ -430,6 +430,18 @@ final class PickerViewController: NSViewController {
     private func beginNvimEdit() {
         guard !isEditingInNvim else { return }
 
+        // 印（Issue 0023）が1件以上ある場合は、選択行ではなく結合後のテキストを編集対象にする
+        // （プレビュー・Enter での確定と同じ扱い）。
+        if viewModel.hasMarks {
+            let joined = joinedMarkedText()
+            guard !joined.isEmpty else {
+                NSSound.beep()
+                return
+            }
+            nvimEditController.begin(text: joined)
+            return
+        }
+
         guard let item = viewModel.item(at: tableView.selectedRow) else {
             NSSound.beep()
             return
