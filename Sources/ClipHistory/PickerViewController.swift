@@ -430,6 +430,18 @@ final class PickerViewController: NSViewController {
     private func beginNvimEdit() {
         guard !isEditingInNvim else { return }
 
+        // 印（Issue 0023）が1件以上ある場合は、選択行ではなく結合後のテキストを編集対象にする
+        // （プレビュー・Enter での確定と同じ扱い）。
+        if viewModel.hasMarks {
+            let joined = joinedMarkedText()
+            guard !joined.isEmpty else {
+                NSSound.beep()
+                return
+            }
+            nvimEditController.begin(text: joined)
+            return
+        }
+
         guard let item = viewModel.item(at: tableView.selectedRow) else {
             NSSound.beep()
             return
@@ -580,8 +592,11 @@ extension PickerViewController: NSSearchFieldDelegate {
             // 検索フィールドにフォーカスがある状態で tab が来るため、Enter や ↑↓ と同じ経路で
             // ここで受け、選択行への印付け（Issue 0023）に使う。標準のフォーカス移動（次の
             // キービューへの遷移）を起こさないよう、常に true を返す。
-            if viewModel.toggleMark(at: tableView.selectedRow) {
-                tableView.reloadData(forRowIndexes: IndexSet(integer: tableView.selectedRow), columnIndexes: IndexSet(integer: 0))
+            // 印を付けたら1つ上（過去）へ選択を移し、tab の連打で連続して印を付けられるようにする。
+            let targetRow = tableView.selectedRow
+            if viewModel.toggleMark(at: targetRow) {
+                tableView.reloadData(forRowIndexes: IndexSet(integer: targetRow), columnIndexes: IndexSet(integer: 0))
+                moveSelection(by: -1)
                 updatePreview()
             } else {
                 NSSound.beep()
