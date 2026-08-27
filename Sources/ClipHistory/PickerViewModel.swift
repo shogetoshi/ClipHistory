@@ -105,11 +105,11 @@ final class PickerViewModel {
     /// 印が1件以上付いているか（Issue 0023）。
     var hasMarks: Bool { !markedSelection.isEmpty }
 
-    /// 指定行のアイテムの印をトグルする（Issue 0023）。行が範囲外の場合や、
-    /// 画像アイテム（テキストとして結合できないため。⌘E の nvim 編集が画像を
-    /// 対象外にしているのと同じ方針）の場合は何もせず `false` を返す。
+    /// 指定行のアイテムの印をトグルする（Issue 0023）。行が範囲外の場合は何もせず
+    /// `false` を返す。画像アイテムにも印は付けられるが、結合はテキストのみを
+    /// 対象とするため、本文を読めない画像は結合時に除外される。
     func toggleMark(at row: Int) -> Bool {
-        guard let item = item(at: row), item.kind != .image else { return false }
+        guard let item = item(at: row) else { return false }
         markedSelection.toggle(item)
         return true
     }
