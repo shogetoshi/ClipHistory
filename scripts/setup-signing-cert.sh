@@ -31,13 +31,20 @@ openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 3650 \
   -addext "extendedKeyUsage=critical,codeSigning" \
   -keyout "$TMPDIR_LOCAL/key.pem" -out "$TMPDIR_LOCAL/cert.pem"
 
+# OpenSSL 3 系の既定の PKCS#12（AES + SHA-256 MAC）は macOS の security import が読めず、
+# "MAC verification failed during PKCS12 import" で失敗する。
+# macOS が扱える旧来のアルゴリズム（3DES + SHA-1 MAC）を明示し、空でないパスワードを使う。
+P12_PASSWORD="cliphistory-setup"
+
 echo "==> PKCS#12 にまとめます"
 openssl pkcs12 -export -out "$TMPDIR_LOCAL/identity.p12" \
   -inkey "$TMPDIR_LOCAL/key.pem" -in "$TMPDIR_LOCAL/cert.pem" \
-  -name "$CERT_NAME" -passout pass:
+  -name "$CERT_NAME" \
+  -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 \
+  -passout "pass:$P12_PASSWORD"
 
 echo "==> ログインキーチェーンへ取り込みます（キーチェーンのパスワード入力を求められることがあります）"
-security import "$TMPDIR_LOCAL/identity.p12" -k "$KEYCHAIN" -P "" -T /usr/bin/codesign -A
+security import "$TMPDIR_LOCAL/identity.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bin/codesign -A
 
 echo "==> コード署名用途で信頼します（確認ダイアログが表示されることがあります）"
 security add-trusted-cert -r trustRoot -p codeSign -k "$KEYCHAIN" "$TMPDIR_LOCAL/cert.pem"
@@ -50,4 +57,5 @@ fi
 
 echo "==> 完了しました"
 echo "この後 make app でこの証明書を使って署名するようにすれば、アクセシビリティ権限は一度許可すれば再ビルドしても維持されます。"
-echo "ただし、この証明書に切り替えた直後は一度だけアクセシビリティ権限を許可し直す必要があります。"
+echo "ただし、ad-hoc 署名のまま既にアクセシビリティ権限を許可していた場合は、一度エントリを削除してから許可し直す必要があります"
+echo "（システム設定のスイッチの ON / OFF では復旧しません）。手順は README の「許可しても『設定を促される』ままの場合」を参照してください。"
