@@ -288,6 +288,20 @@ final class PickerViewController: NSViewController {
         tableView.scrollRowToVisible(next)
     }
 
+    /// 選択中の行に複数選択の印を付け（トグル）、選択を `delta` 行ぶん移す（Issue 0023）。
+    /// 印を付ける対象は移動前の選択行である。連打で連続して印を付けられるようにするため、
+    /// 印付けと移動をひとまとめにしている。
+    private func markSelectedRow(movingBy delta: Int) {
+        let targetRow = tableView.selectedRow
+        if viewModel.toggleMark(at: targetRow) {
+            tableView.reloadData(forRowIndexes: IndexSet(integer: targetRow), columnIndexes: IndexSet(integer: 0))
+            moveSelection(by: delta)
+            updatePreview()
+        } else {
+            NSSound.beep()
+        }
+    }
+
     private func commitSelection() {
         // 印（Issue 0023）が1件以上あれば、結合後の内容を確定として渡す。
         if viewModel.hasMarks {
@@ -592,15 +606,15 @@ extension PickerViewController: NSSearchFieldDelegate {
             // 検索フィールドにフォーカスがある状態で tab が来るため、Enter や ↑↓ と同じ経路で
             // ここで受け、選択行への印付け（Issue 0023）に使う。標準のフォーカス移動（次の
             // キービューへの遷移）を起こさないよう、常に true を返す。
-            // 印を付けたら1つ上（過去）へ選択を移し、tab の連打で連続して印を付けられるようにする。
-            let targetRow = tableView.selectedRow
-            if viewModel.toggleMark(at: targetRow) {
-                tableView.reloadData(forRowIndexes: IndexSet(integer: targetRow), columnIndexes: IndexSet(integer: 0))
-                moveSelection(by: -1)
-                updatePreview()
-            } else {
-                NSSound.beep()
-            }
+            // 印を付けたら1つ下（未来方向）へ選択を移し、tab の連打で連続して印を付けられるようにする。
+            markSelectedRow(movingBy: 1)
+            return true
+        case #selector(NSResponder.insertBacktab(_:)):
+            // Shift-Tab は insertBacktab(_:) として渡ってくる。Tab と同じく印を付けるが、
+            // 選択は1つ上（過去方向）へ移す。一覧は最新が最下行のため、直近の履歴を続けて
+            // 選ぶときはこちらを使うことになる。標準の逆方向のフォーカス移動を起こさないよう
+            // 常に true を返す。
+            markSelectedRow(movingBy: -1)
             return true
         case #selector(NSResponder.cancelOperation(_:)):
             onCancel?()
