@@ -19,7 +19,7 @@ public enum TOMLParseError: Error, LocalizedError {
         case .syntaxError(let line):
             return "\(line)行目: 構文を解釈できません"
         case .unsupportedValue(let line):
-            return "\(line)行目: サポートしていない値です（ダブルクォート文字列・数値のみ対応しています）"
+            return "\(line)行目: サポートしていない値です（ダブルクォート文字列・数値・真偽値のみ対応しています）"
         case .invalidString(let line):
             return "\(line)行目: 文字列リテラルが不正です"
         case .invalidTableHeader(let line):
@@ -32,7 +32,7 @@ public enum TOMLParseError: Error, LocalizedError {
 
 /// TOML の最小サブセットをパースする。外部依存を増やさない方針（design 13.1）のため
 /// 自前実装とし、サポート範囲は設定ファイルに必要なものだけに絞る
-/// （テーブルヘッダ・ダブルクォート文字列またはクォート無し数値リテラルの `key = value` のみ）。
+/// （テーブルヘッダ・ダブルクォート文字列またはクォート無し数値リテラル・真偽値の `key = value` のみ）。
 public enum TOMLParser {
     /// 「テーブル名 → （キー → 文字列値）」の2階層辞書を返す。
     /// テーブル名はドット区切りをそのまま連結した文字列（`[nvim.env]` → `"nvim.env"`）。
@@ -151,6 +151,10 @@ public enum TOMLParser {
         if valuePart.hasPrefix("\"") {
             let value = try parseBasicString(valuePart, lineNumber: lineNumber)
             return (key, value)
+        }
+
+        if valuePart == "true" || valuePart == "false" {
+            return (key, valuePart)
         }
 
         guard isNumberLiteral(valuePart) else {
