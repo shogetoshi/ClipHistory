@@ -18,7 +18,6 @@ final class PickerViewModel {
     var onItemsChanged: (() -> Void)?
 
     private let resultsProvider: ResultsProvider
-    private let settings: Settings
 
     private(set) var items: [HistoryItem] = []
 
@@ -38,9 +37,8 @@ final class PickerViewModel {
         return formatter
     }()
 
-    init(resultsProvider: ResultsProvider, settings: Settings) {
+    init(resultsProvider: ResultsProvider) {
         self.resultsProvider = resultsProvider
-        self.settings = settings
     }
 
     var count: Int { items.count }
@@ -69,11 +67,11 @@ final class PickerViewModel {
     /// 即座に結果を取り直す。
     func reload(query: String) {
         do {
-            // resultLimit は毎回 Settings から読み直す（設定画面での変更が次回の読み出しで
-            // 反映されるようにするため。フェーズ4指示）。
+            // resultLimit は起動時に読み込まれた config.toml の値（Config.shared）を使う
+            // （設定はconfig.tomlに統一し、GUIからの変更はできない。Issue 0025）。
             // プロバイダは最新順（先頭が最上位）で返すが、履歴なので最新を下に置きたいため
             // ここで反転する（Issue 0003）。
-            items = Array(try resultsProvider.results(for: query, limit: settings.resultLimit).reversed())
+            items = Array(try resultsProvider.results(for: query, limit: Config.shared.resultLimit).reversed())
         } catch {
             items = []
             NSLog("ClipHistory: ResultsProvider.results(for:) failed: \(error)")
