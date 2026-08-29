@@ -152,14 +152,6 @@ final class AppComponents {
         pickerPanelController.toggle()
     }
 
-    /// 監視間隔の変更を反映するため、クリップボード監視のタイマーを張り替える。
-    /// 監視間隔の変更だけは即座に反映する（他の設定項目は次回の読み出し時に
-    /// 反映されればよい。指示）。
-    func restartClipboardMonitor() {
-        clipboardMonitor.stop()
-        clipboardMonitor.start()
-    }
-
     /// 履歴・BLOB・検索インデックスをすべて消す（メニューの「履歴を全消去」用）。
     func clearAllHistory() throws {
         // DB・BLOB・SearchIndex の3つすべてをクリアする（どれか1つでも残すと不整合になる）。

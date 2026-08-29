@@ -1,51 +1,28 @@
 import SwiftUI
 import ClipHistoryCore
 
-/// 設定画面のビューモデル。`Settings`（`UserDefaults` ベース）への読み書きを仲介する。
-/// SwiftUI の双方向バインディングのため `ObservableObject` にしている。
-///
-/// 各 `@Published` プロパティの `didSet` で即座に `Settings` へ書き戻す（保存ボタンは設けない）。
-/// `pollingInterval` のみ、変更のたびに `onPollingIntervalChanged` を呼び、
-/// `ClipboardMonitor` のタイマー張り替えを `AppDelegate` 側に依頼する
-/// （指示: 監視間隔だけは即座に反映、他の項目は次回の読み出し時に反映されればよい）。
+/// 設定画面のビューモデル。`Settings`（`UserDefaults` ベース）と `Config`（`config.toml`）から
+/// 現在値を読み取って保持するだけの読み取り専用モデル（Issue 0025）。
 final class SettingsViewModel: ObservableObject {
-    // `SwiftUI.Settings`（Scene）と名前が衝突するため、明示的に `ClipHistoryCore.Settings` を指す。
-    private let settings: ClipHistoryCore.Settings
-    private let onPollingIntervalChanged: () -> Void
-
-    @Published var maxItemCount: Int {
-        // Settings.maxItemCount のセッターが 1〜100000 にクランプする
-        didSet { settings.maxItemCount = maxItemCount }
-    }
-    @Published var pollingInterval: Double {
-        didSet {
-            settings.pollingInterval = pollingInterval
-            onPollingIntervalChanged()
-        }
-    }
-    @Published var maxTextBytes: Int {
-        didSet { settings.maxTextBytes = maxTextBytes }
-    }
-    @Published var resultLimit: Int {
-        didSet { settings.resultLimit = resultLimit }
-    }
-    @Published var skipConcealed: Bool {
-        didSet { settings.skipConcealed = skipConcealed }
-    }
+    let maxItemCount: Int
+    let pollingInterval: TimeInterval
+    let maxTextBytes: Int
+    let maxImageBytes: Int
+    let skipConcealed: Bool
+    let resultLimit: Int
+    let inlineBlobThreshold: Int
 
     /// ホットキーは読み取り専用表示のみ（v1スコープ外のレコーダUIは実装しない）。
     let hotKeyDisplay: String
 
-    init(settings: ClipHistoryCore.Settings, onPollingIntervalChanged: @escaping () -> Void) {
-        self.settings = settings
-        self.onPollingIntervalChanged = onPollingIntervalChanged
-        // これらの代入は自身の初期化子内での設定のため didSet は呼ばれない
-        // （Settingsへの書き戻し・onPollingIntervalChangedの誤発火は起きない）。
-        self.maxItemCount = settings.maxItemCount
-        self.pollingInterval = settings.pollingInterval
-        self.maxTextBytes = settings.maxTextBytes
-        self.resultLimit = settings.resultLimit
-        self.skipConcealed = settings.skipConcealed
+    init(settings: ClipHistoryCore.Settings) {
+        self.maxItemCount = Config.shared.maxItemCount
+        self.pollingInterval = Config.shared.pollingInterval
+        self.maxTextBytes = Config.shared.maxTextBytes
+        self.maxImageBytes = Config.shared.maxImageBytes
+        self.skipConcealed = Config.shared.skipConcealed
+        self.resultLimit = Config.shared.resultLimit
+        self.inlineBlobThreshold = Config.shared.inlineBlobThreshold
         self.hotKeyDisplay = Self.hotKeyDisplayString(settings.hotKey)
     }
 
@@ -79,7 +56,8 @@ final class SettingsViewModel: ObservableObject {
     }
 }
 
-/// 設定画面の本体。凝ったデザインは不要という指示のため、`Form` による最小限の構成にする。
+/// 設定画面の本体。設定は `config.toml` に統一されており、この画面はあくまで現在の設定値を
+/// 確認するための読み取り専用画面である（Issue 0025）。`Form` による最小限の構成にする。
 /// フォントだけはアプリの他の画面に合わせて等幅にする（Issue 0012）。
 struct SettingsView: View {
     @ObservedObject var viewModel: SettingsViewModel
@@ -87,21 +65,22 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("履歴") {
-                Stepper(value: $viewModel.maxItemCount, in: ClipHistoryCore.Settings.maxItemCountRange, step: 100) {
-                    labeledValue("保持件数上限", "\(viewModel.maxItemCount) 件")
-                }
+                labeledValue("保持件数上限", "\(viewModel.maxItemCount) 件")
             }
 
             Section("監視") {
-                labeledField("監視間隔（秒）", value: $viewModel.pollingInterval, range: 0.05...5.0)
-                labeledField("保存する最大テキストサイズ（バイト）", value: $viewModel.maxTextBytes, range: 1_024...50_000_000)
-                Toggle("機密データをスキップ", isOn: $viewModel.skipConcealed)
+                labeledValue("監視間隔（秒）", "\(viewModel.pollingInterval) 秒")
+                labeledValue("保存する最大テキストサイズ（バイト）", "\(viewModel.maxTextBytes) バイト")
+                labeledValue("保存する最大画像サイズ（バイト）", "\(viewModel.maxImageBytes) バイト")
+                labeledValue("機密データをスキップ", viewModel.skipConcealed ? "有効" : "無効")
             }
 
             Section("一覧表示") {
-                Stepper(value: $viewModel.resultLimit, in: 1...5_000, step: 10) {
-                    labeledValue("一覧の最大表示件数", "\(viewModel.resultLimit) 件")
-                }
+                labeledValue("一覧の最大表示件数", "\(viewModel.resultLimit) 件")
+            }
+
+            Section("保存") {
+                labeledValue("BLOBのインライン閾値（バイト）", "\(viewModel.inlineBlobThreshold) バイト")
             }
 
             Section("ホットキー") {
@@ -123,38 +102,5 @@ struct SettingsView: View {
             Spacer()
             Text(value).foregroundStyle(.secondary)
         }
-    }
-
-    private func labeledField(_ title: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
-        HStack {
-            Text(title)
-            Spacer()
-            TextField("", value: Binding(
-                get: { value.wrappedValue },
-                set: { value.wrappedValue = range.clamp($0) }
-            ), format: .number)
-                .frame(width: 80)
-                .multilineTextAlignment(.trailing)
-        }
-    }
-
-    private func labeledField(_ title: String, value: Binding<Int>, range: ClosedRange<Int>) -> some View {
-        HStack {
-            Text(title)
-            Spacer()
-            TextField("", value: Binding(
-                get: { value.wrappedValue },
-                set: { value.wrappedValue = range.clamp($0) }
-            ), format: .number)
-                .frame(width: 100)
-                .multilineTextAlignment(.trailing)
-        }
-    }
-}
-
-private extension ClosedRange {
-    /// 入力値を範囲内にクランプする（TextField への直接入力で不正な値にならないようにする）。
-    func clamp(_ value: Bound) -> Bound {
-        Swift.min(Swift.max(value, lowerBound), upperBound)
     }
 }

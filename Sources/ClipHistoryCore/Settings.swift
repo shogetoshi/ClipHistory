@@ -25,15 +25,11 @@ public struct HotKeyConfig: Equatable {
     public static let pasteAndCyclePrevious = HotKeyConfig(keyCode: 9, modifiers: 0x1100)
 }
 
-/// `UserDefaults` ベースの設定管理。設計書「10. 設定項目」の全キーを定義する。
-/// このフェーズで実際に参照するのは `pollingInterval` / `maxTextBytes` /
-/// `inlineBlobThreshold` / `skipConcealed` のみで、他のキーは後続フェーズのために
-/// 既定値付きで先に定義しておく。
+/// `UserDefaults` ベースの設定管理。利用者が指定する値はすべて `config.toml`（`Config`）に
+/// 統一されており（Issue 0025）、ここに残るのはアプリが自動的に書き戻す状態
+/// （ホットキー・パネル位置・プレビュー幅比率）のみである。
 public final class Settings {
     public static let shared = Settings()
-
-    /// 履歴の保持件数上限として許容する範囲。設定画面の入力範囲もこれを参照する。
-    public static let maxItemCountRange = 1...100_000
 
     /// 一覧とプレビューの幅比率として許容する範囲（Issue 0018）。
     public static let previewWidthRatioRange: ClosedRange<Double> = 0.3...3.0
@@ -41,15 +37,8 @@ public final class Settings {
     private let defaults: UserDefaults
 
     private enum Key: String {
-        case pollingInterval
-        case maxItemCount
         case hotKeyKeyCode
         case hotKeyModifiers
-        case maxTextBytes
-        case maxImageBytes
-        case resultLimit
-        case inlineBlobThreshold
-        case skipConcealed
         case panelFrame
         case previewWidthRatio
     }
@@ -57,33 +46,10 @@ public final class Settings {
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         defaults.register(defaults: [
-            Key.pollingInterval.rawValue: 0.3,
-            Key.maxItemCount.rawValue: 10_000,
             Key.hotKeyKeyCode.rawValue: 8,       // kVK_ANSI_C
             Key.hotKeyModifiers.rawValue: 0x1100, // controlKey | cmdKey
-            Key.maxTextBytes.rawValue: 5 * 1024 * 1024,
-            Key.maxImageBytes.rawValue: 20 * 1024 * 1024,
-            Key.resultLimit.rawValue: 200,
-            Key.inlineBlobThreshold.rawValue: 64 * 1024,
-            Key.skipConcealed.rawValue: true,
             Key.previewWidthRatio.rawValue: 1.0
         ])
-    }
-
-    /// 監視間隔（秒）。既定 0.3
-    public var pollingInterval: TimeInterval {
-        get { defaults.double(forKey: Key.pollingInterval.rawValue) }
-        set { defaults.set(newValue, forKey: Key.pollingInterval.rawValue) }
-    }
-
-    /// 履歴の保持件数上限（既定 10000）。不正値を掴まないよう読み書きの双方でクランプする。
-    public var maxItemCount: Int {
-        get { Self.clampMaxItemCount(defaults.integer(forKey: Key.maxItemCount.rawValue)) }
-        set { defaults.set(Self.clampMaxItemCount(newValue), forKey: Key.maxItemCount.rawValue) }
-    }
-
-    private static func clampMaxItemCount(_ value: Int) -> Int {
-        min(maxItemCountRange.upperBound, max(maxItemCountRange.lowerBound, value))
     }
 
     /// 一覧とプレビューの幅比率（プレビュー幅 ÷ 一覧幅）。ドラッグでの境界移動を反映して保存する（Issue 0018）。
@@ -109,37 +75,6 @@ public final class Settings {
             defaults.set(Int(newValue.keyCode), forKey: Key.hotKeyKeyCode.rawValue)
             defaults.set(Int(newValue.modifiers), forKey: Key.hotKeyModifiers.rawValue)
         }
-    }
-
-    /// これを超えるテキストは保存しない（既定 5MB）
-    public var maxTextBytes: Int {
-        get { defaults.integer(forKey: Key.maxTextBytes.rawValue) }
-        set { defaults.set(newValue, forKey: Key.maxTextBytes.rawValue) }
-    }
-
-    /// これを超える画像は保存しない（既定 20MB）。テキストとは別の上限を持たせるのは、
-    /// スクリーンショットなどの画像はテキストより桁が大きいため。
-    public var maxImageBytes: Int {
-        get { defaults.integer(forKey: Key.maxImageBytes.rawValue) }
-        set { defaults.set(newValue, forKey: Key.maxImageBytes.rawValue) }
-    }
-
-    /// 一覧に表示する最大件数（既定 200）
-    public var resultLimit: Int {
-        get { defaults.integer(forKey: Key.resultLimit.rawValue) }
-        set { defaults.set(newValue, forKey: Key.resultLimit.rawValue) }
-    }
-
-    /// この値以下は DB 内 BLOB、超過は外部ファイル（既定 64KB）
-    public var inlineBlobThreshold: Int {
-        get { defaults.integer(forKey: Key.inlineBlobThreshold.rawValue) }
-        set { defaults.set(newValue, forKey: Key.inlineBlobThreshold.rawValue) }
-    }
-
-    /// 機密フラグ付きデータをスキップするか（既定 true）
-    public var skipConcealed: Bool {
-        get { defaults.bool(forKey: Key.skipConcealed.rawValue) }
-        set { defaults.set(newValue, forKey: Key.skipConcealed.rawValue) }
     }
 
     /// 検索パネルの位置・大きさ（Issue 0009）。未保存・不正値なら nil を返し、
