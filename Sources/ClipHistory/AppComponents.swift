@@ -38,7 +38,7 @@ final class AppComponents {
         let historyStore = HistoryStore(
             db: db,
             blobStore: blobStore,
-            inlineBlobThreshold: settings.inlineBlobThreshold
+            inlineBlobThreshold: Config.shared.inlineBlobThreshold
         )
         self.historyStore = historyStore
 
@@ -48,7 +48,13 @@ final class AppComponents {
         index.load(try historyStore.loadIndexEntries())
         self.searchIndex = index
 
-        let monitor = ClipboardMonitor(settings: settings, historyStore: historyStore)
+        let monitor = ClipboardMonitor(
+            pollingInterval: Config.shared.pollingInterval,
+            maxTextBytes: Config.shared.maxTextBytes,
+            maxImageBytes: Config.shared.maxImageBytes,
+            skipConcealed: Config.shared.skipConcealed,
+            historyStore: historyStore
+        )
         self.clipboardMonitor = monitor
 
         // 起動時＋1時間ごとにパージ・BLOB GC・（必要なら）VACUUMを実行する（設計書8節）。
@@ -57,7 +63,7 @@ final class AppComponents {
             db: db,
             historyStore: historyStore,
             blobStore: blobStore,
-            settings: settings
+            maxItemCount: Config.shared.maxItemCount
         )
         scheduler.onPurge = { [weak index] deletedIDs in
             // パージでDBから消えたidを検索インデックスからも除去し、不整合を防ぐ。
@@ -144,14 +150,6 @@ final class AppComponents {
     /// 検索パネルの表示/非表示をトグルする。
     func togglePicker() {
         pickerPanelController.toggle()
-    }
-
-    /// 監視間隔の変更を反映するため、クリップボード監視のタイマーを張り替える。
-    /// 監視間隔の変更だけは即座に反映する（他の設定項目は次回の読み出し時に
-    /// 反映されればよい。指示）。
-    func restartClipboardMonitor() {
-        clipboardMonitor.stop()
-        clipboardMonitor.start()
     }
 
     /// 履歴・BLOB・検索インデックスをすべて消す（メニューの「履歴を全消去」用）。

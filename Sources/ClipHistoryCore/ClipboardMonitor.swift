@@ -15,7 +15,10 @@ private enum PasteboardConcealment {
 /// 実データの読み出し・DB書き込みは変化を検出した時のみ行う。
 public final class ClipboardMonitor {
     private let pasteboard = NSPasteboard.general
-    private let settings: Settings
+    private let pollingInterval: TimeInterval
+    private let maxTextBytes: Int
+    private let maxImageBytes: Int
+    private let skipConcealed: Bool
     private let historyStore: HistoryStore
 
     private var lastChangeCount: Int
@@ -25,14 +28,17 @@ public final class ClipboardMonitor {
     /// DBを再読み込みせずにインメモリ検索インデックスへ追記できるようにする（設計書6.1）。
     public var onInsert: ((IndexEntry) -> Void)?
 
-    public init(settings: Settings, historyStore: HistoryStore) {
-        self.settings = settings
+    public init(pollingInterval: TimeInterval, maxTextBytes: Int, maxImageBytes: Int, skipConcealed: Bool, historyStore: HistoryStore) {
+        self.pollingInterval = pollingInterval
+        self.maxTextBytes = maxTextBytes
+        self.maxImageBytes = maxImageBytes
+        self.skipConcealed = skipConcealed
         self.historyStore = historyStore
         self.lastChangeCount = NSPasteboard.general.changeCount
     }
 
     public func start() {
-        let interval = settings.pollingInterval
+        let interval = pollingInterval
         let newTimer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             self?.poll()
         }
@@ -81,7 +87,7 @@ public final class ClipboardMonitor {
         }
 
         // 機密データはスキップ（設定で無効化可能）
-        if settings.skipConcealed && typeStrings.contains(PasteboardConcealment.concealed) {
+        if skipConcealed && typeStrings.contains(PasteboardConcealment.concealed) {
             return
         }
 
@@ -118,7 +124,7 @@ public final class ClipboardMonitor {
             let data = Data(text.utf8)
 
             // 過大なテキストはスキップ（設定可能、既定5MB）
-            guard data.count <= settings.maxTextBytes else { return nil }
+            guard data.count <= maxTextBytes else { return nil }
 
             return Capture(
                 kind: .text,
@@ -136,7 +142,7 @@ public final class ClipboardMonitor {
         }).first else { return nil }
 
         // 過大な画像はスキップ（設定可能、既定20MB）
-        guard data.count <= settings.maxImageBytes else { return nil }
+        guard data.count <= maxImageBytes else { return nil }
 
         let previewText = imagePreviewText(uti: uti, data: data)
         return Capture(

@@ -51,7 +51,7 @@ final class PickerViewController: NSViewController {
     init(resultsProvider: ResultsProvider, settings: Settings, historyStore: HistoryStore) {
         self.historyStore = historyStore
         self.previewContentLoader = PreviewContentLoader(historyStore: historyStore, maxCharacters: Self.previewMaxCharacters)
-        self.viewModel = PickerViewModel(resultsProvider: resultsProvider, settings: settings)
+        self.viewModel = PickerViewModel(resultsProvider: resultsProvider)
         self.settings = settings
         super.init(nibName: nil, bundle: nil)
 

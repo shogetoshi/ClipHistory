@@ -129,6 +129,228 @@ struct ConfigTests {
         #expect(config.fontSize == 14.5)
     }
 
+    @Test("[history] の max_item_count が maxItemCount に読み込まれる")
+    func maxItemCountIsLoadedFromConfig() throws {
+        let config = try Config.parse("""
+        [history]
+        max_item_count = 500
+        """)
+        #expect(config.maxItemCount == 500)
+    }
+
+    @Test("[history] が無い場合は maxItemCount が既定値の10000になる")
+    func maxItemCountDefaultsToTenThousandWhenHistoryTableIsAbsent() throws {
+        let config = try Config.parse("")
+        #expect(config.maxItemCount == 10_000)
+    }
+
+    @Test("[history] の max_item_count が不正な値（範囲外・非数値）の場合は既定値の10000になる")
+    func maxItemCountFallsBackToDefaultOnInvalidValue() throws {
+        let zero = try Config.parse("""
+        [history]
+        max_item_count = 0
+        """)
+        #expect(zero.maxItemCount == 10_000)
+
+        let tooLarge = try Config.parse("""
+        [history]
+        max_item_count = 100001
+        """)
+        #expect(tooLarge.maxItemCount == 10_000)
+
+        let nonNumeric = try Config.parse("""
+        [history]
+        max_item_count = "abc"
+        """)
+        #expect(nonNumeric.maxItemCount == 10_000)
+    }
+
+    @Test("[monitor] の polling_interval が pollingInterval に読み込まれる")
+    func pollingIntervalIsLoadedFromConfig() throws {
+        let config = try Config.parse("""
+        [monitor]
+        polling_interval = 0.5
+        """)
+        #expect(config.pollingInterval == 0.5)
+    }
+
+    @Test("[monitor] が無い場合は pollingInterval が既定値の0.3になる")
+    func pollingIntervalDefaultsToDefaultWhenMonitorTableIsAbsent() throws {
+        let config = try Config.parse("")
+        #expect(config.pollingInterval == 0.3)
+    }
+
+    @Test("[monitor] の polling_interval が不正な値（0以下・非数値）の場合は既定値の0.3になる")
+    func pollingIntervalFallsBackToDefaultOnInvalidValue() throws {
+        let zero = try Config.parse("""
+        [monitor]
+        polling_interval = 0
+        """)
+        #expect(zero.pollingInterval == 0.3)
+
+        let negative = try Config.parse("""
+        [monitor]
+        polling_interval = -1
+        """)
+        #expect(negative.pollingInterval == 0.3)
+
+        let nonNumeric = try Config.parse("""
+        [monitor]
+        polling_interval = "abc"
+        """)
+        #expect(nonNumeric.pollingInterval == 0.3)
+    }
+
+    @Test("[monitor] の max_text_bytes が maxTextBytes に読み込まれる")
+    func maxTextBytesIsLoadedFromConfig() throws {
+        let config = try Config.parse("""
+        [monitor]
+        max_text_bytes = 1024
+        """)
+        #expect(config.maxTextBytes == 1024)
+    }
+
+    @Test("[monitor] が無い場合は maxTextBytes が既定値の5242880になる")
+    func maxTextBytesDefaultsToDefaultWhenMonitorTableIsAbsent() throws {
+        let config = try Config.parse("")
+        #expect(config.maxTextBytes == 5 * 1024 * 1024)
+    }
+
+    @Test("[monitor] の max_text_bytes が不正な値（0以下・非数値）の場合は既定値の5242880になる")
+    func maxTextBytesFallsBackToDefaultOnInvalidValue() throws {
+        let zero = try Config.parse("""
+        [monitor]
+        max_text_bytes = 0
+        """)
+        #expect(zero.maxTextBytes == 5 * 1024 * 1024)
+
+        let nonNumeric = try Config.parse("""
+        [monitor]
+        max_text_bytes = "abc"
+        """)
+        #expect(nonNumeric.maxTextBytes == 5 * 1024 * 1024)
+    }
+
+    @Test("[monitor] の max_image_bytes が maxImageBytes に読み込まれる")
+    func maxImageBytesIsLoadedFromConfig() throws {
+        let config = try Config.parse("""
+        [monitor]
+        max_image_bytes = 2048
+        """)
+        #expect(config.maxImageBytes == 2048)
+    }
+
+    @Test("[monitor] が無い場合は maxImageBytes が既定値の20971520になる")
+    func maxImageBytesDefaultsToDefaultWhenMonitorTableIsAbsent() throws {
+        let config = try Config.parse("")
+        #expect(config.maxImageBytes == 20 * 1024 * 1024)
+    }
+
+    @Test("[monitor] の max_image_bytes が不正な値（0以下・非数値）の場合は既定値の20971520になる")
+    func maxImageBytesFallsBackToDefaultOnInvalidValue() throws {
+        let zero = try Config.parse("""
+        [monitor]
+        max_image_bytes = 0
+        """)
+        #expect(zero.maxImageBytes == 20 * 1024 * 1024)
+
+        let nonNumeric = try Config.parse("""
+        [monitor]
+        max_image_bytes = "abc"
+        """)
+        #expect(nonNumeric.maxImageBytes == 20 * 1024 * 1024)
+    }
+
+    @Test("[monitor] の skip_concealed が skipConcealed に読み込まれる")
+    func skipConcealedIsLoadedFromConfig() throws {
+        let config = try Config.parse("""
+        [monitor]
+        skip_concealed = false
+        """)
+        #expect(config.skipConcealed == false)
+    }
+
+    @Test("[monitor] が無い場合は skipConcealed が既定値のtrueになる")
+    func skipConcealedDefaultsToTrueWhenMonitorTableIsAbsent() throws {
+        let config = try Config.parse("")
+        #expect(config.skipConcealed == true)
+    }
+
+    @Test("[monitor] の skip_concealed が不正な値（\"1\"・\"True\"）の場合は既定値のtrueになる")
+    func skipConcealedFallsBackToDefaultOnInvalidValue() throws {
+        let numeric = try Config.parse("""
+        [monitor]
+        skip_concealed = "1"
+        """)
+        #expect(numeric.skipConcealed == true)
+
+        let capitalized = try Config.parse("""
+        [monitor]
+        skip_concealed = "True"
+        """)
+        #expect(capitalized.skipConcealed == true)
+    }
+
+    @Test("[list] の result_limit が resultLimit に読み込まれる")
+    func resultLimitIsLoadedFromConfig() throws {
+        let config = try Config.parse("""
+        [list]
+        result_limit = 50
+        """)
+        #expect(config.resultLimit == 50)
+    }
+
+    @Test("[list] が無い場合は resultLimit が既定値の200になる")
+    func resultLimitDefaultsToDefaultWhenListTableIsAbsent() throws {
+        let config = try Config.parse("")
+        #expect(config.resultLimit == 200)
+    }
+
+    @Test("[list] の result_limit が不正な値（0以下・非数値）の場合は既定値の200になる")
+    func resultLimitFallsBackToDefaultOnInvalidValue() throws {
+        let zero = try Config.parse("""
+        [list]
+        result_limit = 0
+        """)
+        #expect(zero.resultLimit == 200)
+
+        let nonNumeric = try Config.parse("""
+        [list]
+        result_limit = "abc"
+        """)
+        #expect(nonNumeric.resultLimit == 200)
+    }
+
+    @Test("[storage] の inline_blob_threshold が inlineBlobThreshold に読み込まれる")
+    func inlineBlobThresholdIsLoadedFromConfig() throws {
+        let config = try Config.parse("""
+        [storage]
+        inline_blob_threshold = 128
+        """)
+        #expect(config.inlineBlobThreshold == 128)
+    }
+
+    @Test("[storage] が無い場合は inlineBlobThreshold が既定値の65536になる")
+    func inlineBlobThresholdDefaultsToDefaultWhenStorageTableIsAbsent() throws {
+        let config = try Config.parse("")
+        #expect(config.inlineBlobThreshold == 64 * 1024)
+    }
+
+    @Test("[storage] の inline_blob_threshold が不正な値（負数・非数値）の場合は既定値の65536になる")
+    func inlineBlobThresholdFallsBackToDefaultOnInvalidValue() throws {
+        let negative = try Config.parse("""
+        [storage]
+        inline_blob_threshold = -1
+        """)
+        #expect(negative.inlineBlobThreshold == 64 * 1024)
+
+        let nonNumeric = try Config.parse("""
+        [storage]
+        inline_blob_threshold = "abc"
+        """)
+        #expect(nonNumeric.inlineBlobThreshold == 64 * 1024)
+    }
+
     @Test("存在しないファイルパスを load(from:) に渡すと empty が返る")
     func loadFromNonExistentFileReturnsEmpty() throws {
         let url = FileManager.default.temporaryDirectory

@@ -690,29 +690,25 @@ Shift-Tab の連打になる。古い方から新しい方へ向かって選び�
 
 ## 10. 設定項目
 
-設定は2系統ある。アプリ自身が書き換える値は `UserDefaults`（10.1）に、利用者が手で書く値は
-`~/.config/cliphistory/` 配下のファイル（10.2）に置く。
+設定は2系統ある。アプリが操作に応じて自動的に書き戻す状態は `UserDefaults`（10.1）に、
+利用者が指定する値はすべて `~/.config/cliphistory/` 配下の設定ファイル（10.2）に統一する
+（Issue 0025）。メニューバー → 設定の画面はこれらの現在値を確認するための読み取り専用表示であり、
+そこから値を編集することはできない。
 
 ### 10.1 `UserDefaults`
 
 | キー | 既定値 | 説明 |
 | --- | --- | --- |
-| `pollingInterval` | 0.3 | 監視間隔（秒） |
-| `maxItemCount` | 10000 | 履歴の保持件数上限（最大 100000） |
 | `hotKey` | ⌃⌘C | 呼び出しホットキー |
-| `maxTextBytes` | 5 MB | これを超えるテキストは保存しない |
-| `maxImageBytes` | 20 MB | これを超える画像は保存しない |
-| `resultLimit` | 200 | 一覧に表示する最大件数 |
-| `inlineBlobThreshold` | 64 KB | この値以下は DB 内 BLOB、超過は外部ファイル |
-| `skipConcealed` | true | 機密フラグ付きデータをスキップ |
 | `panelFrame` | なし | パネルの位置・大きさ。移動・リサイズ時に保存し、次回表示時に復元する。未保存時は既定配置を使う。直接Vim編集（7.8）のウィンドウとも共有する（Issue 0021） |
 | `previewWidthRatio` | 1.0（一覧:プレビュー=50:50） | 一覧とプレビューの幅比率（プレビュー幅 ÷ 一覧幅）。境界のドラッグ操作を反映して保存し、次回表示時に復元する（Issue 0018） |
 
 ### 10.2 設定ファイル
 
-利用者が手で編集する設定は `~/.config/cliphistory/` に置く（Issue 0011）。`UserDefaults` と分けたのは、
-設定画面から書き換える値（10.1）と違い、こちらは**アプリが書き戻さない読み取り専用**の値であり、
-エディタで直接開いて差分を追える形が望ましいため。
+利用者が手で編集する設定は `~/.config/cliphistory/` に置く（Issue 0011）。`UserDefaults`（10.1）と
+分けたのは、こちらは**アプリが書き戻さない読み取り専用**の値であり、エディタで直接開いて差分を
+追える形が望ましいため。当初はGUIの設定画面から編集できる値も一部 `UserDefaults` に置いていたが、
+利用者が指定する値はすべてこちらに統一し、GUIからの編集は廃止した（Issue 0025）。
 
 | 項目 | 仕様 |
 | --- | --- |
@@ -746,9 +742,31 @@ Shift-Tab の連打になる。古い方から新しい方へ向かって選び�
 | `[nvim.env]` | 任意の環境変数名 | なし | nvim 起動時に追加で渡す環境変数（後述の2つは書いてはならない） |
 | `[cycle]` | `timeout` | 10 | 前後移動のポインタが揮発するまでの秒数（7.6）。0以下・数値でない値は `NSLog` に警告を残して既定値で動く |
 | `[font]` | `size` | 12 | 一覧・検索欄・プレビューなど各所のフォントサイズの基準値（pt、Issue 0017）。一覧補助情報は基準値-2、検索欄は基準値+1。アプリ上からは変更できない。0以下・数値でない値は `NSLog` に警告を残して既定値で動く |
+| `[history]` | `max_item_count` | 10000 | 履歴の保持件数上限。1〜100000の範囲外・数値でない値は `NSLog` に警告を残して既定値で動く（Issue 0025） |
+| `[monitor]` | `polling_interval` | 0.3 | 監視間隔（秒）。0以下・数値でない値は `NSLog` に警告を残して既定値で動く（Issue 0025） |
+| `[monitor]` | `max_text_bytes` | 5242880（5MB） | これを超えるテキストは保存しない。1未満・数値でない値は `NSLog` に警告を残して既定値で動く（Issue 0025） |
+| `[monitor]` | `max_image_bytes` | 20971520（20MB） | これを超える画像は保存しない。1未満・数値でない値は `NSLog` に警告を残して既定値で動く（Issue 0025） |
+| `[monitor]` | `skip_concealed` | true | 機密フラグ付きデータをスキップするか。`true`/`false` 以外は `NSLog` に警告を残して既定値で動く（Issue 0025） |
+| `[list]` | `result_limit` | 200 | 一覧に表示する最大件数。1未満・数値でない値は `NSLog` に警告を残して既定値で動く（Issue 0025） |
+| `[storage]` | `inline_blob_threshold` | 65536（64KB） | この値以下は DB 内 BLOB、超過は外部ファイル。0未満・数値でない値は `NSLog` に警告を残して既定値で動く（Issue 0025） |
 
 ```toml
 # config.toml
+[history]
+max_item_count = 10000
+
+[monitor]
+polling_interval = 0.3
+max_text_bytes = 5242880
+max_image_bytes = 20971520
+skip_concealed = true
+
+[list]
+result_limit = 200
+
+[storage]
+inline_blob_threshold = 65536
+
 [nvim.env]
 NVIM_CLIPHISTORY = "1"
 

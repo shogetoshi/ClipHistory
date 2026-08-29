@@ -87,12 +87,18 @@ struct TOMLParserTests {
         #expect(result["table"] == ["timeout": "10"])
     }
 
-    @Test("未対応の値（真偽値）で throw する")
+    @Test("未対応の値（大文字小文字が異なる真偽値）で throw する")
     func unsupportedBooleanValueThrows() {
         #expect(throws: (any Error).self) {
             try TOMLParser.parse("""
             [table]
-            key = true
+            key = True
+            """)
+        }
+        #expect(throws: (any Error).self) {
+            try TOMLParser.parse("""
+            [table]
+            key = TRUE
             """)
         }
     }
@@ -134,5 +140,23 @@ struct TOMLParserTests {
         key = "value"
         """)
         #expect(result[""] == ["key": "value"])
+    }
+
+    @Test("クォート無しの true が文字列としてパースできる")
+    func unquotedTrueValueIsStoredAsString() throws {
+        let result = try TOMLParser.parse("""
+        [table]
+        key = true
+        """)
+        #expect(result["table"] == ["key": "true"])
+    }
+
+    @Test("クォート無しの false が文字列としてパースできる")
+    func unquotedFalseValueIsStoredAsString() throws {
+        let result = try TOMLParser.parse("""
+        [table]
+        key = false
+        """)
+        #expect(result["table"] == ["key": "false"])
     }
 }

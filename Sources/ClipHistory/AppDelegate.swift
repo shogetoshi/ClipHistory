@@ -75,11 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 設定ウィンドウを開く。既に開いていれば新規作成せず前面化するだけにする（指示）。
     private func openSettings() {
         if settingsWindowController == nil {
-            settingsWindowController = SettingsWindowController(settings: Settings.shared) { [weak self] in
-                // 監視間隔の変更だけは即座に反映する。ClipboardMonitorのタイマーを張り替える
-                // （他の設定項目は次回の読み出し時に反映されればよい。指示）。
-                self?.components?.restartClipboardMonitor()
-            }
+            settingsWindowController = SettingsWindowController(settings: Settings.shared)
         }
         NSApp.activate(ignoringOtherApps: true)
         settingsWindowController?.window?.makeKeyAndOrderFront(nil)

@@ -10,8 +10,8 @@ import ClipHistoryCore
 /// インスタンスを使い回すことで実現する。
 final class SettingsWindowController: NSWindowController {
     // `SwiftUI.Settings`（Scene）と名前が衝突するため、明示的に `ClipHistoryCore.Settings` を指す。
-    init(settings: ClipHistoryCore.Settings, onPollingIntervalChanged: @escaping () -> Void) {
-        let viewModel = SettingsViewModel(settings: settings, onPollingIntervalChanged: onPollingIntervalChanged)
+    init(settings: ClipHistoryCore.Settings) {
+        let viewModel = SettingsViewModel(settings: settings)
         let hosting = NSHostingController(rootView: SettingsView(viewModel: viewModel))
 
         let window = NSWindow(contentViewController: hosting)

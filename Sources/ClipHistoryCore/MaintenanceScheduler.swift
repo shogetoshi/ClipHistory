@@ -16,7 +16,7 @@ public final class MaintenanceScheduler {
     private let db: Database
     private let historyStore: HistoryStore
     private let blobStore: BlobStore
-    private let settings: Settings
+    private let maxItemCount: Int
     private let interval: TimeInterval
     /// 現在時刻の取得元。テストで任意の時刻を注入できるよう `Date()` を直接呼ばない設計にする
     /// （指揮官指示。VACUUMの7日判定を時刻注入でテストするため）。
@@ -32,14 +32,14 @@ public final class MaintenanceScheduler {
         db: Database,
         historyStore: HistoryStore,
         blobStore: BlobStore,
-        settings: Settings,
+        maxItemCount: Int,
         interval: TimeInterval = MaintenanceScheduler.defaultInterval,
         now: @escaping () -> Date = Date.init
     ) {
         self.db = db
         self.historyStore = historyStore
         self.blobStore = blobStore
-        self.settings = settings
+        self.maxItemCount = maxItemCount
         self.interval = interval
         self.now = now
     }
@@ -67,7 +67,7 @@ public final class MaintenanceScheduler {
     /// タイマー経由に限らずテストからも直接呼べるよう public にしておく。
     public func runMaintenance() {
         do {
-            let deletedIDs = try historyStore.purge(maxItemCount: settings.maxItemCount)
+            let deletedIDs = try historyStore.purge(maxItemCount: maxItemCount)
             if !deletedIDs.isEmpty {
                 onPurge?(deletedIDs)
             }
