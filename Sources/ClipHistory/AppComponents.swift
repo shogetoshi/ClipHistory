@@ -38,7 +38,7 @@ final class AppComponents {
         let historyStore = HistoryStore(
             db: db,
             blobStore: blobStore,
-            inlineBlobThreshold: settings.inlineBlobThreshold
+            inlineBlobThreshold: Config.shared.inlineBlobThreshold
         )
         self.historyStore = historyStore
 
@@ -48,7 +48,13 @@ final class AppComponents {
         index.load(try historyStore.loadIndexEntries())
         self.searchIndex = index
 
-        let monitor = ClipboardMonitor(settings: settings, historyStore: historyStore)
+        let monitor = ClipboardMonitor(
+            pollingInterval: Config.shared.pollingInterval,
+            maxTextBytes: Config.shared.maxTextBytes,
+            maxImageBytes: Config.shared.maxImageBytes,
+            skipConcealed: Config.shared.skipConcealed,
+            historyStore: historyStore
+        )
         self.clipboardMonitor = monitor
 
         // 起動時＋1時間ごとにパージ・BLOB GC・（必要なら）VACUUMを実行する（設計書8節）。
@@ -57,7 +63,7 @@ final class AppComponents {
             db: db,
             historyStore: historyStore,
             blobStore: blobStore,
-            settings: settings
+            maxItemCount: Config.shared.maxItemCount
         )
         scheduler.onPurge = { [weak index] deletedIDs in
             // パージでDBから消えたidを検索インデックスからも除去し、不整合を防ぐ。
