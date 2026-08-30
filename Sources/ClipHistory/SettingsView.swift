@@ -64,6 +64,10 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Text("設定の変更はテキストファイル（config.toml）で行ってください。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
             Section("履歴") {
                 labeledValue("保持件数上限", "\(viewModel.maxItemCount) 件")
             }
