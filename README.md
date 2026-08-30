@@ -100,15 +100,17 @@ ClipHistory の行が残っていれば **「−」ボタンで削除**します
 
 ### グローバルホットキー
 
-| キー | 動作 |
-| --- | --- |
-| ⌃⌘C | 履歴パネルの表示 / 非表示 |
-| ⌃⌘P / ⌃⌘N | パネルを開かず、クリップボードを履歴の1個前 / 1個後へ差し替える |
-| ⌃⌘V | 今の内容を貼り付け、クリップボードを1個前へ進める（連続貼り付け） |
-| ⌃⌘⇧C | パネルを開かず、今のクリップボードの内容を nvim で編集する |
+ホットキーは `~/.config/cliphistory/config.toml` の `[hotkey]` で設定します。**設定を書かないとそのホットキーは一切使えません**（既定値へのフォールバックはありません）。以下は代表的な設定例と、その場合の動作です。
 
-ホットキーはいずれもコード上の固定値です。パネルの呼び出しキー（⌃⌘C）だけは
-`UserDefaults` 経由で変更できます（下記「設定」参照）。
+| `config.toml` の設定 | 動作 |
+| --- | --- |
+| `toggle_panel = "ctrl+command+c"` | 履歴パネルの表示 / 非表示（⌃⌘C） |
+| `cycle_previous = "ctrl+command+p"` | パネルを開かず、クリップボードを履歴の1個前へ差し替える（⌃⌘P） |
+| `cycle_next = "ctrl+command+n"` | パネルを開かず、クリップボードを履歴の1個後へ差し替える（⌃⌘N） |
+| `paste_and_cycle_previous = "command+ctrl+v"` | 今の内容を貼り付け、クリップボードを1個前へ進める（連続貼り付け、⌘⌃V） |
+| `direct_vim_edit = "command+ctrl+shift+c"` | パネルを開かず、今のクリップボードの内容を nvim で編集する（⌘⌃⇧C） |
+
+設定方法の詳細（キー名の一覧・書式）は下記「設定ファイル」を参照してください。
 
 ### パネル内のキー操作
 
@@ -152,24 +154,12 @@ ClipHistory の行が残っていれば **「−」ボタンで削除**します
 | 機密データをスキップ | 有効 | `org.nspasteboard.ConcealedType` 付きのデータを保存しない |
 | 一覧の最大表示件数 | 200 | 検索結果の表示上限 |
 | BLOB のインライン閾値 | 64 KB | これ以下は DB 内 BLOB、超過は外部ファイルへ |
-| 呼び出しホットキー | ⌃⌘C | パネルの表示 / 非表示を切り替えるキー |
-
-設定画面には出していませんが、`defaults` で変更できる項目もあります（変更後はアプリの再起動が必要）:
-
-| キー | 既定値 | 説明 |
-| --- | --- | --- |
-| `hotKeyKeyCode` / `hotKeyModifiers` | 8 / 4352（= ⌃⌘C） | 呼び出しホットキー。Carbon の仮想キーコードと修飾キーマスク |
-
-```sh
-# 例: 呼び出しホットキーを ⌃⌘V（キーコード 9）にする
-defaults write local.cliphistory.app hotKeyKeyCode -int 9
-defaults write local.cliphistory.app hotKeyModifiers -int 4352
-```
 
 ### 設定ファイル（`~/.config/cliphistory/`）
 
 手で書く設定は XDG 準拠のディレクトリに置きます（`$XDG_CONFIG_HOME` があればそちら）。
 どのファイルも**無くて構いません**。不正な記述はログに警告を残し、既定値で起動します。
+ただし `[hotkey]` だけは例外で、既定値へのフォールバックがありません（後述）。
 
 ```
 ~/.config/cliphistory/
@@ -203,7 +193,19 @@ size = 12      # 一覧・検索欄・プレビューのフォントサイズ（
 
 [nvim.env]
 NVIM_CLIPHISTORY = "1"   # nvim 起動時に追加で渡す環境変数
+
+[hotkey]
+toggle_panel = "ctrl+command+c"          # 履歴パネルの表示 / 非表示
+cycle_previous = "ctrl+command+p"        # パネルを開かず1個前へ
+cycle_next = "ctrl+command+n"            # パネルを開かず1個後へ
+direct_vim_edit = "command+ctrl+shift+c" # パネルを開かず直接nvim編集
+paste_and_cycle_previous = "command+ctrl+v" # 連続貼り付け
 ```
+
+`[hotkey]` の値は `"モディファイヤ+...+キー"` 形式の文字列です。モディファイヤは
+`command`/`ctrl`/`option`/`shift`（重複不可、1つ以上必須）、キーは `a`-`z` / `0`-`9` /
+`enter` / `space` / `escape`（すべて小文字）が使えます。**書かなかったアクションはホットキーとして
+登録されず、そのショートカットキーは使えなくなります**（他の設定項目と異なり既定値へのフォールバックはありません）。
 
 `[nvim.env]` の値はシェル展開されないリテラルです。`PATH` の追加は `init-pre.lua` で
 `vim.env.PATH = vim.env.PATH .. ":/opt/hoge/bin"` と書いてください。
@@ -259,7 +261,7 @@ make clean   # .build を削除
 
 ## 現状の制約
 
-- ホットキーの変更 UI（キー入力を記録するレコーダ）はありません。設定画面では読み取り専用表示で、変更は `defaults` 経由になります
+- ホットキーの変更 UI（キー入力を記録するレコーダ）はありません。設定画面では読み取り専用表示で、変更は `config.toml` の `[hotkey]` を直接編集して行います
 - リッチテキスト（RTF / HTML など書式付きテキスト）は保存しません。プレーンテキストと画像のみが対象です（理由は design.md 13.4）
 - 画像は取り込み・プレビュー・書き戻しに対応していますが、検索対象は説明テキスト（例: `[Image] PNG 1920×1080`）のみです
 - ファイル（Finder からのコピー）は未対応です
