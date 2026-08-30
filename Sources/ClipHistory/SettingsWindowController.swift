@@ -15,7 +15,7 @@ final class SettingsWindowController: NSWindowController {
         let hosting = NSHostingController(rootView: SettingsView(viewModel: viewModel))
 
         let window = NSWindow(contentViewController: hosting)
-        window.title = "設定"
+        window.title = "設定の確認"
         window.styleMask = [.titled, .closable, .miniaturizable]
         // 閉じるボタンで実体を破棄せず隠すだけにする（次回「設定」選択時に同じウィンドウを
         // 前面化する運用のため）。
