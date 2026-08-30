@@ -404,4 +404,50 @@ struct ConfigTests {
         #expect(AppPaths.configFileURL(environment: ["XDG_CONFIG_HOME": ""]).path == expected)
         #expect(AppPaths.configFileURL(environment: ["XDG_CONFIG_HOME": "relative/path"]).path == expected)
     }
+
+    @Test("[hotkey] が無い場合は hotKeyBindings が空になる")
+    func hotKeyBindingsIsEmptyWhenHotkeyTableIsAbsent() throws {
+        let config = try Config.parse("")
+        #expect(config.hotKeyBindings == [:])
+    }
+
+    @Test("[hotkey] の値がすべて読み込まれる")
+    func hotKeyBindingsAreAllLoadedFromConfig() throws {
+        let config = try Config.parse("""
+        [hotkey]
+        toggle_panel = "ctrl+command+c"
+        cycle_previous = "ctrl+command+p"
+        cycle_next = "ctrl+command+n"
+        direct_vim_edit = "ctrl+command+v"
+        paste_and_cycle_previous = "ctrl+command+b"
+        """)
+        #expect(config.hotKeyBindings[.togglePanel] == HotKeyBindingParser.parse("ctrl+command+c"))
+        #expect(config.hotKeyBindings[.cyclePrevious] == HotKeyBindingParser.parse("ctrl+command+p"))
+        #expect(config.hotKeyBindings[.cycleNext] == HotKeyBindingParser.parse("ctrl+command+n"))
+        #expect(config.hotKeyBindings[.directVimEdit] == HotKeyBindingParser.parse("ctrl+command+v"))
+        #expect(config.hotKeyBindings[.pasteAndCyclePrevious] == HotKeyBindingParser.parse("ctrl+command+b"))
+    }
+
+    @Test("[hotkey] の値が不正な場合はそのアクションだけ辞書に含まれない")
+    func hotKeyBindingsExcludesInvalidValue() throws {
+        let config = try Config.parse("""
+        [hotkey]
+        toggle_panel = "invalid"
+        """)
+        #expect(config.hotKeyBindings[.togglePanel] == nil)
+        #expect(config.hotKeyBindings == [:])
+    }
+
+    @Test("[hotkey] の一部だけ設定されている場合はそのアクションだけ辞書に含まれる")
+    func hotKeyBindingsIncludesOnlyConfiguredAction() throws {
+        let config = try Config.parse("""
+        [hotkey]
+        toggle_panel = "ctrl+command+c"
+        """)
+        #expect(config.hotKeyBindings[.togglePanel] == HotKeyBindingParser.parse("ctrl+command+c"))
+        #expect(config.hotKeyBindings[.cyclePrevious] == nil)
+        #expect(config.hotKeyBindings[.cycleNext] == nil)
+        #expect(config.hotKeyBindings[.directVimEdit] == nil)
+        #expect(config.hotKeyBindings[.pasteAndCyclePrevious] == nil)
+    }
 }

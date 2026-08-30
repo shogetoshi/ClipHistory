@@ -138,13 +138,7 @@ final class AppComponents {
 
     /// ホットキーの登録を試みる。失敗した場合は throw し、利用者への通知は呼び出し元に委ねる。
     func registerHotKey() throws {
-        try hotKeyManager.register([
-            .togglePanel: settings.hotKey,
-            .cyclePrevious: .cyclePrevious,
-            .cycleNext: .cycleNext,
-            .directVimEdit: .directVimEdit,
-            .pasteAndCyclePrevious: .pasteAndCyclePrevious
-        ])
+        try hotKeyManager.register(Config.shared.hotKeyBindings)
     }
 
     /// 検索パネルの表示/非表示をトグルする。

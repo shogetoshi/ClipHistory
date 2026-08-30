@@ -33,6 +33,11 @@ public struct Config: Equatable {
     /// BLOB をインラインで保存するサイズの閾値（バイト）（TOML の `[storage]` テーブルの `inline_blob_threshold`）。
     public var inlineBlobThreshold: Int
 
+    /// TOML の [hotkey] テーブルから読み込んだホットキー設定。キーが無い、または値が不正な
+    /// アクションは辞書に含めない（他の設定項目と異なり既定値へのフォールバックはしない。
+    /// 設定が無ければそのホットキーは登録されず機能を呼び出せなくなる、design 10.2）。
+    public var hotKeyBindings: [HotKeyAction: HotKeyConfig]
+
     public static let empty = Config(
         nvimEnvironment: [:],
         cycleTimeout: 10,
@@ -43,7 +48,8 @@ public struct Config: Equatable {
         maxImageBytes: 20 * 1024 * 1024,
         skipConcealed: true,
         resultLimit: 200,
-        inlineBlobThreshold: 64 * 1024
+        inlineBlobThreshold: 64 * 1024,
+        hotKeyBindings: [:]
     )
 
     public init(
@@ -56,7 +62,8 @@ public struct Config: Equatable {
         maxImageBytes: Int = 20 * 1024 * 1024,
         skipConcealed: Bool = true,
         resultLimit: Int = 200,
-        inlineBlobThreshold: Int = 64 * 1024
+        inlineBlobThreshold: Int = 64 * 1024,
+        hotKeyBindings: [HotKeyAction: HotKeyConfig] = [:]
     ) {
         self.nvimEnvironment = nvimEnvironment
         self.cycleTimeout = cycleTimeout
@@ -68,6 +75,7 @@ public struct Config: Equatable {
         self.skipConcealed = skipConcealed
         self.resultLimit = resultLimit
         self.inlineBlobThreshold = inlineBlobThreshold
+        self.hotKeyBindings = hotKeyBindings
     }
 
     /// TOML テキストをパースして組み立てる。未知のテーブル・未知のキーはエラーにせず無視する
@@ -184,6 +192,26 @@ public struct Config: Equatable {
             }
         }
 
+        // ホットキーは他の設定項目と異なり、値が無い・不正でも既定値へフォールバックしない。
+        // 設定が無ければそのホットキーは登録されず機能を呼び出せなくなる（design 10.2）。
+        var hotKeyBindings: [HotKeyAction: HotKeyConfig] = [:]
+        let hotKeyTomlKeys: [(String, HotKeyAction)] = [
+            ("toggle_panel", .togglePanel),
+            ("cycle_previous", .cyclePrevious),
+            ("cycle_next", .cycleNext),
+            ("direct_vim_edit", .directVimEdit),
+            ("paste_and_cycle_previous", .pasteAndCyclePrevious),
+        ]
+        for (tomlKey, action) in hotKeyTomlKeys {
+            if let value = tables["hotkey"]?[tomlKey] {
+                if let binding = HotKeyBindingParser.parse(value) {
+                    hotKeyBindings[action] = binding
+                } else {
+                    NSLog("ClipHistory: Config.parse() invalid [hotkey] \(tomlKey) value: \(value), hotkey disabled")
+                }
+            }
+        }
+
         return Config(
             nvimEnvironment: nvimEnvironment,
             cycleTimeout: cycleTimeout,
@@ -194,7 +222,8 @@ public struct Config: Equatable {
             maxImageBytes: maxImageBytes,
             skipConcealed: skipConcealed,
             resultLimit: resultLimit,
-            inlineBlobThreshold: inlineBlobThreshold
+            inlineBlobThreshold: inlineBlobThreshold,
+            hotKeyBindings: hotKeyBindings
         )
     }
 
