@@ -1,8 +1,8 @@
 import SwiftUI
 import ClipHistoryCore
 
-/// 設定画面のビューモデル。`Settings`（`UserDefaults` ベース）と `Config`（`config.toml`）から
-/// 現在値を読み取って保持するだけの読み取り専用モデル（Issue 0025）。
+/// 設定画面のビューモデル。`Settings`（`UserDefaults` ベース、パネル位置・プレビュー幅比率）と
+/// `Config`（`config.toml`）から現在値を読み取って保持するだけの読み取り専用モデル（Issue 0025）。
 final class SettingsViewModel: ObservableObject {
     let maxItemCount: Int
     let pollingInterval: TimeInterval
@@ -13,7 +13,7 @@ final class SettingsViewModel: ObservableObject {
     let inlineBlobThreshold: Int
 
     /// ホットキーは読み取り専用表示のみ（v1スコープ外のレコーダUIは実装しない）。
-    let hotKeyDisplay: String
+    let hotKeyDisplays: [(label: String, value: String)]
 
     init(settings: ClipHistoryCore.Settings) {
         self.maxItemCount = Config.shared.maxItemCount
@@ -23,7 +23,22 @@ final class SettingsViewModel: ObservableObject {
         self.skipConcealed = Config.shared.skipConcealed
         self.resultLimit = Config.shared.resultLimit
         self.inlineBlobThreshold = Config.shared.inlineBlobThreshold
-        self.hotKeyDisplay = Self.hotKeyDisplayString(settings.hotKey)
+
+        let bindings = Config.shared.hotKeyBindings
+        let actions: [(HotKeyAction, String)] = [
+            (.togglePanel, "検索パネル表示"),
+            (.cyclePrevious, "1個前へ"),
+            (.cycleNext, "1個後へ"),
+            (.directVimEdit, "直接Vim編集"),
+            (.pasteAndCyclePrevious, "連続貼り付け")
+        ]
+        self.hotKeyDisplays = actions.map { action, label in
+            if let config = bindings[action] {
+                return (label: label, value: Self.hotKeyDisplayString(config))
+            } else {
+                return (label: label, value: "未設定（無効）")
+            }
+        }
     }
 
     /// Carbon の修飾キーマスク・仮想キーコードから表示用文字列を組み立てる。
@@ -49,8 +64,8 @@ final class SettingsViewModel: ObservableObject {
             0: "A", 1: "S", 2: "D", 3: "F", 4: "H", 5: "G", 6: "Z", 7: "X", 8: "C", 9: "V",
             11: "B", 12: "Q", 13: "W", 14: "E", 15: "R", 16: "Y", 17: "T",
             18: "1", 19: "2", 20: "3", 21: "4", 22: "6", 23: "5", 25: "9", 26: "7", 28: "8", 29: "0",
-            31: "O", 32: "U", 34: "I", 35: "P", 37: "L", 38: "J", 40: "K", 45: "N", 46: "M",
-            49: "Space"
+            31: "O", 32: "U", 34: "I", 35: "P", 36: "Enter", 37: "L", 38: "J", 40: "K", 45: "N", 46: "M",
+            49: "Space", 53: "Escape"
         ]
         return map[keyCode] ?? "code:\(keyCode)"
     }
@@ -88,7 +103,9 @@ struct SettingsView: View {
             }
 
             Section("ホットキー") {
-                labeledValue("呼び出しホットキー", viewModel.hotKeyDisplay)
+                ForEach(viewModel.hotKeyDisplays, id: \.label) { entry in
+                    labeledValue(entry.label, entry.value)
+                }
                 Text("この画面ではホットキーの変更はできません。")
                     .font(.caption)
                     .foregroundStyle(.secondary)

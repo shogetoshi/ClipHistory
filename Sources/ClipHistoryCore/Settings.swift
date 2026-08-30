@@ -1,9 +1,7 @@
 import Foundation
 import CoreGraphics
 
-/// 呼び出しホットキーの設定値。キーコード・修飾キーは Carbon の定数体系（HotKeyManager が
-/// 実装されるフェーズ2で `RegisterEventHotKey` にそのまま渡す想定）で保持する。
-/// このフェーズでは値を保持するのみで、実際のホットキー登録は行わない。
+/// ホットキーの設定値（キーコード・修飾キーはCarbonの定数体系）。
 public struct HotKeyConfig: Equatable {
     /// Carbon の仮想キーコード（既定値 8 は kVK_ANSI_C）
     public var keyCode: UInt32
@@ -14,20 +12,11 @@ public struct HotKeyConfig: Equatable {
         self.keyCode = keyCode
         self.modifiers = modifiers
     }
-
-    /// 1個前へ（⌃⌘P）。Issue 0015 で固定値とした（設定変更は将来）。
-    public static let cyclePrevious = HotKeyConfig(keyCode: 35, modifiers: 0x1100)
-    /// 1個後へ（⌃⌘N）。Issue 0015 で固定値とした（設定変更は将来）。
-    public static let cycleNext = HotKeyConfig(keyCode: 45, modifiers: 0x1100)
-    /// 直接Vim編集モードへ入る（⌘⌃⇧C）。Issue 0020 で固定値とした（設定変更は将来）。
-    public static let directVimEdit = HotKeyConfig(keyCode: 8, modifiers: 0x1300)
-    /// 連続貼り付け（⌘⌃V）。Issue 0022 で固定値とした（設定変更は将来）。
-    public static let pasteAndCyclePrevious = HotKeyConfig(keyCode: 9, modifiers: 0x1100)
 }
 
 /// `UserDefaults` ベースの設定管理。利用者が指定する値はすべて `config.toml`（`Config`）に
 /// 統一されており（Issue 0025）、ここに残るのはアプリが自動的に書き戻す状態
-/// （ホットキー・パネル位置・プレビュー幅比率）のみである。
+/// （パネル位置・プレビュー幅比率）のみである。
 public final class Settings {
     public static let shared = Settings()
 
@@ -37,8 +26,6 @@ public final class Settings {
     private let defaults: UserDefaults
 
     private enum Key: String {
-        case hotKeyKeyCode
-        case hotKeyModifiers
         case panelFrame
         case previewWidthRatio
     }
@@ -46,8 +33,6 @@ public final class Settings {
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         defaults.register(defaults: [
-            Key.hotKeyKeyCode.rawValue: 8,       // kVK_ANSI_C
-            Key.hotKeyModifiers.rawValue: 0x1100, // controlKey | cmdKey
             Key.previewWidthRatio.rawValue: 1.0
         ])
     }
@@ -61,20 +46,6 @@ public final class Settings {
 
     private static func clampPreviewWidthRatio(_ value: Double) -> Double {
         min(previewWidthRatioRange.upperBound, max(previewWidthRatioRange.lowerBound, value))
-    }
-
-    /// 呼び出しホットキー（既定 ⌃⌘C）
-    public var hotKey: HotKeyConfig {
-        get {
-            HotKeyConfig(
-                keyCode: UInt32(defaults.integer(forKey: Key.hotKeyKeyCode.rawValue)),
-                modifiers: UInt32(defaults.integer(forKey: Key.hotKeyModifiers.rawValue))
-            )
-        }
-        set {
-            defaults.set(Int(newValue.keyCode), forKey: Key.hotKeyKeyCode.rawValue)
-            defaults.set(Int(newValue.modifiers), forKey: Key.hotKeyModifiers.rawValue)
-        }
     }
 
     /// 検索パネルの位置・大きさ（Issue 0009）。未保存・不正値なら nil を返し、
