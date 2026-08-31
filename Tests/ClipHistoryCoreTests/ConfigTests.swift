@@ -450,4 +450,28 @@ struct ConfigTests {
         #expect(config.hotKeyBindings[.directVimEdit] == nil)
         #expect(config.hotKeyBindings[.pasteAndCyclePrevious] == nil)
     }
+
+    @Test("[hotkey] の edit_in_nvim が無い場合は editInNvimHotKey が nil になる")
+    func editInNvimHotKeyIsNilWhenAbsent() throws {
+        let config = try Config.parse("")
+        #expect(config.editInNvimHotKey == nil)
+    }
+
+    @Test("[hotkey] の edit_in_nvim が読み込まれる")
+    func editInNvimHotKeyIsLoadedFromConfig() throws {
+        let config = try Config.parse("""
+        [hotkey]
+        edit_in_nvim = "command+e"
+        """)
+        #expect(config.editInNvimHotKey == HotKeyBindingParser.parse("command+e"))
+    }
+
+    @Test("[hotkey] の edit_in_nvim が不正な場合は editInNvimHotKey が nil になる")
+    func editInNvimHotKeyIsNilWhenInvalid() throws {
+        let config = try Config.parse("""
+        [hotkey]
+        edit_in_nvim = "invalid"
+        """)
+        #expect(config.editInNvimHotKey == nil)
+    }
 }

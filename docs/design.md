@@ -390,7 +390,7 @@ fzf と同じ手法を採る。
 | ⇧Tab | Tab と同じく印をトグルするが、選択は1つ上（過去方向）へ移す（7.9、Issue 0023） |
 | Enter | 確定（クリップボードへ書き戻してパネルを閉じる） |
 | Esc | キャンセルして閉じる。フォーカスの位置に関わらず効く（`PickerViewController` が `cancelOperation(_:)` をレスポンダチェーンで受ける） |
-| ⌘E | 選択中のテキスト項目を nvim で編集（7.5）。印がある場合は結合後のテキストを編集する（7.9、Issue 0023） |
+| ⌘E（config.tomlの`[hotkey]`で設定変更可。10.2、Issue 0027） | 選択中のテキスト項目を nvim で編集（7.5）。印がある場合は結合後のテキストを編集する（7.9、Issue 0023） |
 | ⌘↩ | nvim 編集の確定（編集モード中のみ） |
 | ⌘. | nvim 編集の破棄（編集モード中のみ） |
 | ⌘C / ⌘A / ⌘X / ⌘V / ⌘Z / ⇧⌘Z | 標準の編集操作（コピー / すべてを選択 / 切り取り / ペースト / 取り消す / やり直す）。プレビューで選択した本文のコピーや、検索欄での編集に使う。実体は `MainMenu`（後述）が登録する編集メニューのキー等価であり、アクションは responder chain でファーストレスポンダへ届く |
@@ -749,6 +749,7 @@ Shift-Tab の連打になる。古い方から新しい方へ向かって選び�
 | `[list]` | `result_limit` | 200 | 一覧に表示する最大件数。1未満・数値でない値は `NSLog` に警告を残して既定値で動く（Issue 0025） |
 | `[storage]` | `inline_blob_threshold` | 65536（64KB） | この値以下は DB 内 BLOB、超過は外部ファイル。0未満・数値でない値は `NSLog` に警告を残して既定値で動く（Issue 0025） |
 | `[hotkey]` | `toggle_panel` / `cycle_previous` / `cycle_next` / `direct_vim_edit` / `paste_and_cycle_previous` | なし | 各アクションのホットキー。`"モディファイヤ+...+キー"` 形式の文字列（例: `"ctrl+command+c"`）。モディファイヤは `command`/`ctrl`/`option`/`shift`（重複不可、1つ以上必須）、キーは `a`-`z`/`0`-`9`/`enter`/`space`/`escape`。**他の項目と異なり既定値へのフォールバックはなく**、未設定または不正な値のアクションはホットキー登録されず機能を呼び出せなくなる（不正時は `NSLog` に警告、未設定時は警告なし）（Issue 0026） |
+| `[hotkey]` | `edit_in_nvim` | なし | パネル内で選択項目のnvim編集を開始するキー。書式は上記5項目と同じ。**Carbonでグローバル登録される上記5項目とは異なり、ClipHistoryのパネルにフォーカスがある時だけローカルに判定される**（`PickerViewController`）。未設定または不正な値の場合はこの機能を呼び出せない（不正時は `NSLog` に警告、未設定時は警告なし）（Issue 0027） |
 
 ```toml
 # config.toml
@@ -782,6 +783,7 @@ cycle_previous = "ctrl+command+p"
 cycle_next = "ctrl+command+n"
 direct_vim_edit = "command+ctrl+shift+c"
 paste_and_cycle_previous = "command+ctrl+v"
+edit_in_nvim = "command+e"
 ```
 
 ```lua
