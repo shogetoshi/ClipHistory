@@ -32,13 +32,19 @@ final class SettingsViewModel: ObservableObject {
             (.directVimEdit, "直接Vim編集"),
             (.pasteAndCyclePrevious, "連続貼り付け")
         ]
-        self.hotKeyDisplays = actions.map { action, label in
+        var displays = actions.map { action, label in
             if let config = bindings[action] {
                 return (label: label, value: Self.hotKeyDisplayString(config))
             } else {
                 return (label: label, value: "未設定（無効）")
             }
         }
+        if let editInNvimHotKey = Config.shared.editInNvimHotKey {
+            displays.append((label: "Vim編集モードへ", value: Self.hotKeyDisplayString(editInNvimHotKey)))
+        } else {
+            displays.append((label: "Vim編集モードへ", value: "未設定（無効）"))
+        }
+        self.hotKeyDisplays = displays
     }
 
     /// Carbon の修飾キーマスク・仮想キーコードから表示用文字列を組み立てる。
