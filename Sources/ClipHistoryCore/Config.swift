@@ -38,6 +38,13 @@ public struct Config: Equatable {
     /// 設定が無ければそのホットキーは登録されず機能を呼び出せなくなる、design 10.2）。
     public var hotKeyBindings: [HotKeyAction: HotKeyConfig]
 
+    /// TOML の [hotkey] テーブルの `edit_in_nvim` から読み込んだ、パネル内でnvim編集モードに
+    /// 入るキー。`hotKeyBindings` とは異なりCarbonでグローバル登録されるものではなく、
+    /// パネルにフォーカスがある時だけローカルに判定される（PickerViewController）。
+    /// 他のホットキーと同様、値が無い・不正な場合は既定値へフォールバックせず nil のままにする
+    /// （その場合この機能は呼び出せなくなる、design 10.2）。
+    public var editInNvimHotKey: HotKeyConfig?
+
     public static let empty = Config(
         nvimEnvironment: [:],
         cycleTimeout: 10,
@@ -49,7 +56,8 @@ public struct Config: Equatable {
         skipConcealed: true,
         resultLimit: 200,
         inlineBlobThreshold: 64 * 1024,
-        hotKeyBindings: [:]
+        hotKeyBindings: [:],
+        editInNvimHotKey: nil
     )
 
     public init(
@@ -63,7 +71,8 @@ public struct Config: Equatable {
         skipConcealed: Bool = true,
         resultLimit: Int = 200,
         inlineBlobThreshold: Int = 64 * 1024,
-        hotKeyBindings: [HotKeyAction: HotKeyConfig] = [:]
+        hotKeyBindings: [HotKeyAction: HotKeyConfig] = [:],
+        editInNvimHotKey: HotKeyConfig? = nil
     ) {
         self.nvimEnvironment = nvimEnvironment
         self.cycleTimeout = cycleTimeout
@@ -76,6 +85,7 @@ public struct Config: Equatable {
         self.resultLimit = resultLimit
         self.inlineBlobThreshold = inlineBlobThreshold
         self.hotKeyBindings = hotKeyBindings
+        self.editInNvimHotKey = editInNvimHotKey
     }
 
     /// TOML テキストをパースして組み立てる。未知のテーブル・未知のキーはエラーにせず無視する
@@ -212,6 +222,15 @@ public struct Config: Equatable {
             }
         }
 
+        var editInNvimHotKey: HotKeyConfig?
+        if let value = tables["hotkey"]?["edit_in_nvim"] {
+            if let binding = HotKeyBindingParser.parse(value) {
+                editInNvimHotKey = binding
+            } else {
+                NSLog("ClipHistory: Config.parse() invalid [hotkey] edit_in_nvim value: \(value), hotkey disabled")
+            }
+        }
+
         return Config(
             nvimEnvironment: nvimEnvironment,
             cycleTimeout: cycleTimeout,
@@ -223,7 +242,8 @@ public struct Config: Equatable {
             skipConcealed: skipConcealed,
             resultLimit: resultLimit,
             inlineBlobThreshold: inlineBlobThreshold,
-            hotKeyBindings: hotKeyBindings
+            hotKeyBindings: hotKeyBindings,
+            editInNvimHotKey: editInNvimHotKey
         )
     }
 
