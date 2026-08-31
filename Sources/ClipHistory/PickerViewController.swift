@@ -329,6 +329,9 @@ final class PickerViewController: NSViewController {
 
     /// ⌘系のキー等価を、ビュー階層の探索より先に横取りして処理する（Issue 0006）。
     /// `PanelBackgroundView.keyEquivalentHandler` から呼ばれる。
+    /// nvim 編集を開始するキーは config.toml（`Config.shared.editInNvimHotKey`）で
+    /// 設定された任意の組み合わせになったため、`.control` 判定・`.command` 限定より前に判定する
+    /// （Issue 0027。利用者が ctrl を含む組み合わせを設定していても正しく機能するため）。
     /// 修飾キーが `.control` のみの押下は、fzfライクな検索欄編集用の
     /// `handleControlKeyEquivalent(_:)`（Issue 0014）に振り分ける。
     /// 修飾キーが `.command` のみの押下だけを従来どおりここで処理する（⌘⇧E 等の意図しない
@@ -336,6 +339,15 @@ final class PickerViewController: NSViewController {
     private func handleKeyEquivalent(_ event: NSEvent) -> Bool {
         guard event.type == .keyDown else {
             return false
+        }
+
+        if let editInNvimHotKey = Config.shared.editInNvimHotKey, matchesHotKey(event, editInNvimHotKey) {
+            // 編集モードでなければ nvim 編集を開始する。編集モード中の再押下は
+            // nvim へ素通ししても意味が無いため、握りつぶして何もしない。
+            if !isEditingInNvim {
+                beginNvimEdit()
+            }
+            return true
         }
 
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -350,13 +362,6 @@ final class PickerViewController: NSViewController {
         }
 
         switch event.charactersIgnoringModifiers {
-        case "e":
-            // 編集モードでなければ nvim 編集を開始する。編集モード中の ⌘E は
-            // nvim へ素通ししても意味が無いため、握りつぶして何もしない。
-            if !isEditingInNvim {
-                beginNvimEdit()
-            }
-            return true
         case "\r":
             // Esc は nvim 側が（ノーマルモード復帰等に）使うため確定には使えない。
             // そのため確定は ⌘↩ に割り当てる。編集モードでなければ通常の確定（Enter）に譲る。
@@ -371,6 +376,19 @@ final class PickerViewController: NSViewController {
         default:
             return false
         }
+    }
+
+    /// NSEvent の修飾キーフラグを Carbon の修飾キーマスクへ変換し、`HotKeyConfig` と一致するか判定する。
+    /// config.toml の [hotkey] はCarbonの体系で値を持つため（HotKeyBindingParser）、比較のために変換する。
+    private func matchesHotKey(_ event: NSEvent, _ config: ClipHistoryCore.HotKeyConfig) -> Bool {
+        guard UInt32(event.keyCode) == config.keyCode else { return false }
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        var carbonModifiers: UInt32 = 0
+        if flags.contains(.command) { carbonModifiers |= 0x0100 }
+        if flags.contains(.control) { carbonModifiers |= 0x1000 }
+        if flags.contains(.option) { carbonModifiers |= 0x0800 }
+        if flags.contains(.shift) { carbonModifiers |= 0x0200 }
+        return carbonModifiers == config.modifiers
     }
 
     /// 検索欄に対する ⌃W（直前の単語を削除）/ ⌃U（カーソル位置から行頭まで削除）を
