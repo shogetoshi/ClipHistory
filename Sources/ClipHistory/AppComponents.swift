@@ -72,8 +72,12 @@ final class AppComponents {
         self.maintenanceScheduler = scheduler
 
         let resultsProvider = SearchResultsProvider(searchIndex: index, historyStore: historyStore)
-        let controller = PickerPanelController(
+        let historyContentSource = HistoryContentSource(
             historyStore: historyStore,
+            previewMaxCharacters: PickerViewController.previewMaxCharacters
+        )
+        let controller = PickerPanelController(
+            contentSource: historyContentSource,
             resultsProvider: resultsProvider,
             settings: settings
         )
