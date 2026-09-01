@@ -180,7 +180,7 @@ extension PickerPanelController: NSWindowDelegate {
     /// この経路ではユーザーが自分で別アプリへフォーカスを移しているため、元アプリへの復帰は行わない。
     func windowDidResignKey(_ notification: Notification) {
         // nvim 編集モード中に閉じると編集内容が失われるため、この経路では閉じない（Issue 0006）。
-        // 編集の終了（⌘↩ 確定 / ⌘. 破棄）は PickerViewController 側のキー操作で明示的に行う。
+        // 編集の終了は nvim 自身の終了（:wq / :q 等）によってのみ起こる。
         guard !pickerViewController.isEditingInNvim else { return }
         hide(restoringFocus: false)
     }

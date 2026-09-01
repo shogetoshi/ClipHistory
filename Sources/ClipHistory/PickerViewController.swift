@@ -223,7 +223,7 @@ final class PickerViewController: NSViewController {
     /// 最新の結果を再取得して最終行（最新のアイテム）を選択したうえで、検索フィールドへ入力フォーカスを移す。
     func willShow() {
         // パネルが何らかの理由で編集モードのまま再表示された場合に備えた保険（Issue 0006）。
-        nvimEditController.finish(commit: false)
+        nvimEditController.finish()
         searchField.stringValue = ""
         // パネルを開くたびに印はリセットする（Issue 0023）。
         viewModel.clearMarks()
@@ -361,21 +361,7 @@ final class PickerViewController: NSViewController {
             return false
         }
 
-        switch event.charactersIgnoringModifiers {
-        case "\r":
-            // Esc は nvim 側が（ノーマルモード復帰等に）使うため確定には使えない。
-            // そのため確定は ⌘↩ に割り当てる。編集モードでなければ通常の確定（Enter）に譲る。
-            guard isEditingInNvim else { return false }
-            nvimEditController.finish(commit: true)
-            return true
-        case ".":
-            // Esc が使えない都合上、破棄も ⌘. に割り当てる。
-            guard isEditingInNvim else { return false }
-            nvimEditController.finish(commit: false)
-            return true
-        default:
-            return false
-        }
+        return false
     }
 
     /// NSEvent の修飾キーフラグを Carbon の修飾キーマスクへ変換し、`HotKeyConfig` と一致するか判定する。
