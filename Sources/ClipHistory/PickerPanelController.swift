@@ -87,8 +87,14 @@ final class PickerPanelController: NSObject {
         }
     }
 
+    /// 書き戻す内容が無い場合はビープするだけで、クリップボードもパネルも変えない。
+    /// Snippet で ``` のブロックを持たないアイテムを選んだ場合がこれにあたる（Issue 0030）。
+    /// クリップボード履歴の項目は常に書き戻せるため、この経路には入らない。
     private func commit(_ item: HistoryItem) {
-        _ = contentSource.writeToPasteboard(item)
+        guard contentSource.writeToPasteboard(item) else {
+            NSSound.beep()
+            return
+        }
         panel.orderOut(nil)
         restoreFocus()
     }
