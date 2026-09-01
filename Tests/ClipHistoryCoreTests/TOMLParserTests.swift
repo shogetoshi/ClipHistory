@@ -113,12 +113,12 @@ struct TOMLParserTests {
         }
     }
 
-    @Test("未対応の値（配列）で throw する")
+    @Test("未対応の値（数値要素を含む配列）で throw する")
     func unsupportedArrayValueThrows() {
         #expect(throws: (any Error).self) {
             try TOMLParser.parse("""
             [table]
-            key = ["a", "b"]
+            key = [1, 2]
             """)
         }
     }
@@ -158,5 +158,89 @@ struct TOMLParserTests {
         key = false
         """)
         #expect(result["table"] == ["key": "false"])
+    }
+
+    @Test("複数要素の文字列配列が parseDocument の arrays に読み込まれる")
+    func multipleElementStringArrayIsLoadedIntoArrays() throws {
+        let result = try TOMLParser.parseDocument("""
+        [table]
+        dirs = ["a", "b", "c"]
+        """)
+        #expect(result.arrays["table"] == ["dirs": ["a", "b", "c"]])
+    }
+
+    @Test("空配列が空の配列として読み込まれる")
+    func emptyArrayIsLoadedAsEmptyArray() throws {
+        let result = try TOMLParser.parseDocument("""
+        [table]
+        dirs = []
+        """)
+        #expect(result.arrays["table"] == ["dirs": []])
+    }
+
+    @Test("末尾カンマと要素間の空白を許容する")
+    func trailingCommaAndSpacesBetweenElementsAreAllowed() throws {
+        let result = try TOMLParser.parseDocument("""
+        [table]
+        dirs = [ "a" , "b" , ]
+        """)
+        #expect(result.arrays["table"] == ["dirs": ["a", "b"]])
+    }
+
+    @Test("配列要素のエスケープが展開される")
+    func escapeSequencesInArrayElementsAreExpanded() throws {
+        let result = try TOMLParser.parseDocument("""
+        [table]
+        dirs = ["a\\nb", "a\\"b"]
+        """)
+        #expect(result.arrays["table"] == ["dirs": ["a\nb", "a\"b"]])
+    }
+
+    @Test("行コメントが配列でも正しく除去される")
+    func lineCommentIsStrippedFromArrayValueToo() throws {
+        let result = try TOMLParser.parseDocument("""
+        [table]
+        dirs = ["a"] # コメント
+        """)
+        #expect(result.arrays["table"] == ["dirs": ["a"]])
+    }
+
+    @Test("閉じ括弧が無い（複数行配列）場合は syntaxError を投げる")
+    func unterminatedArrayThrowsSyntaxError() throws {
+        let error = try #require(throws: TOMLParseError.self) {
+            try TOMLParser.parseDocument("""
+            [table]
+            key = ["a"
+            """)
+        }
+        guard case .syntaxError = error else {
+            Issue.record("syntaxError であるべきところ \(error) が投げられた")
+            return
+        }
+    }
+
+    @Test("同一テーブル内で同じキーが文字列と配列で重複したら duplicateKey を投げる")
+    func duplicateKeyAcrossStringAndArrayThrows() throws {
+        let error = try #require(throws: TOMLParseError.self) {
+            try TOMLParser.parseDocument("""
+            [table]
+            key = "a"
+            key = ["b"]
+            """)
+        }
+        guard case .duplicateKey = error else {
+            Issue.record("duplicateKey であるべきところ \(error) が投げられた")
+            return
+        }
+    }
+
+    @Test("既存の parse は配列を含む設定でも文字列値だけを返す（配列キーは含まれない）")
+    func parseReturnsOnlyStringValuesWhenArrayIsPresent() throws {
+        let result = try TOMLParser.parse("""
+        [table]
+        str = "value"
+        dirs = ["a", "b"]
+        """)
+        #expect(result["table"] == ["str": "value"])
     }
 }
