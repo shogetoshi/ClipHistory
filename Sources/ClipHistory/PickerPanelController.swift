@@ -17,6 +17,11 @@ final class PickerPanelController: NSObject {
     /// （設計書 7.3 手順1・3）。
     private var previousFrontmostApp: NSRunningApplication?
 
+    /// パネル表示直前に呼ばれる。Snippet は `.md` を外部エディタで編集されるため、
+    /// 開くたびに読み直す必要がある（Issue 0030）。クリップボード履歴側は設定しないため、
+    /// 従来どおり何も起こらない。
+    var onWillShow: (() -> Void)?
+
     init(contentSource: PickerContentSource, resultsProvider: ResultsProvider, settings: Settings, showsItemMetadata: Bool = true) {
         self.contentSource = contentSource
         self.settings = settings
@@ -57,6 +62,8 @@ final class PickerPanelController: NSObject {
     private func show() {
         // ホットキー受信時点の frontmost アプリを保持しておく（設計書 7.3 手順1）
         previousFrontmostApp = NSWorkspace.shared.frontmostApplication
+
+        onWillShow?()
 
         positionPanel()
         pickerViewController.willShow()
