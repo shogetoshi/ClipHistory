@@ -19,7 +19,7 @@ public enum TOMLParseError: Error, LocalizedError {
         case .syntaxError(let line):
             return "\(line)行目: 構文を解釈できません"
         case .unsupportedValue(let line):
-            return "\(line)行目: サポートしていない値です（ダブルクォート文字列・数値・真偽値のみ対応しています）"
+            return "\(line)行目: サポートしていない値です（ダブルクォート文字列・数値・真偽値・1行の文字列配列のみ対応しています）"
         case .invalidString(let line):
             return "\(line)行目: 文字列リテラルが不正です"
         case .invalidTableHeader(let line):
@@ -30,15 +30,25 @@ public enum TOMLParseError: Error, LocalizedError {
     }
 }
 
+/// TOML のパース結果。文字列値のテーブルと、文字列配列のテーブルを分けて保持する。
+public struct TOMLDocument: Equatable {
+    /// テーブル名 →（キー → 文字列値）
+    public let tables: [String: [String: String]]
+    /// テーブル名 →（キー → 文字列配列）
+    public let arrays: [String: [String: [String]]]
+}
+
 /// TOML の最小サブセットをパースする。外部依存を増やさない方針（design 13.1）のため
 /// 自前実装とし、サポート範囲は設定ファイルに必要なものだけに絞る
-/// （テーブルヘッダ・ダブルクォート文字列またはクォート無し数値リテラル・真偽値の `key = value` のみ）。
+/// （テーブルヘッダ・ダブルクォート文字列またはクォート無し数値リテラル・真偽値の `key = value`、
+/// および1行の文字列配列のみ）。
 public enum TOMLParser {
-    /// 「テーブル名 → （キー → 文字列値）」の2階層辞書を返す。
+    /// 「テーブル名 →（キー → 文字列値）」と「テーブル名 →（キー → 文字列配列）」を分けて返す。
     /// テーブル名はドット区切りをそのまま連結した文字列（`[nvim.env]` → `"nvim.env"`）。
     /// テーブルヘッダの外に書かれたキーはルートテーブルとして `""` に入れる。
-    public static func parse(_ text: String) throws -> [String: [String: String]] {
+    public static func parseDocument(_ text: String) throws -> TOMLDocument {
         var tables: [String: [String: String]] = [:]
+        var arrays: [String: [String: [String]]] = [:]
         var currentTable = ""
 
         // `text.split` だと末尾の空行の扱いなどで行番号がずれうるため、改行で単純に分ける。
@@ -60,16 +70,33 @@ public enum TOMLParser {
                 continue
             }
 
-            let (key, value) = try parseKeyValue(line, lineNumber: lineNumber)
-            var table = tables[currentTable] ?? [:]
-            guard table[key] == nil else {
+            let (key, valuePart) = try parseKeyAndValuePart(line, lineNumber: lineNumber)
+            guard tables[currentTable]?[key] == nil, arrays[currentTable]?[key] == nil else {
                 throw TOMLParseError.duplicateKey(line: lineNumber, key: key)
             }
-            table[key] = value
-            tables[currentTable] = table
+
+            if valuePart.hasPrefix("[") {
+                let value = try parseArrayValue(valuePart, lineNumber: lineNumber)
+                var arrayTable = arrays[currentTable] ?? [:]
+                arrayTable[key] = value
+                arrays[currentTable] = arrayTable
+            } else {
+                let value = try parseScalarValue(valuePart, lineNumber: lineNumber)
+                var table = tables[currentTable] ?? [:]
+                table[key] = value
+                tables[currentTable] = table
+            }
         }
 
-        return tables
+        return TOMLDocument(tables: tables, arrays: arrays)
+    }
+
+    /// 「テーブル名 → （キー → 文字列値）」の2階層辞書を返す。配列は含まれない
+    /// （配列も必要な場合は `parseDocument` を使うこと）。
+    /// テーブル名はドット区切りをそのまま連結した文字列（`[nvim.env]` → `"nvim.env"`）。
+    /// テーブルヘッダの外に書かれたキーはルートテーブルとして `""` に入れる。
+    public static func parse(_ text: String) throws -> [String: [String: String]] {
+        try parseDocument(text).tables
     }
 
     /// 行コメント（`#` から行末まで）を取り除く。文字列リテラルの内側の `#` は
@@ -130,8 +157,9 @@ public enum TOMLParser {
         return names.joined(separator: ".")
     }
 
-    /// `key = "value"` を解析する。キーはベアキーまたはダブルクォート文字列を許容する。
-    private static func parseKeyValue(_ line: String, lineNumber: Int) throws -> (key: String, value: String) {
+    /// `key = value` の `key` と、`=` 右辺（前後の空白を除いたもの）を取り出す。
+    /// キーはベアキーまたはダブルクォート文字列を許容する。
+    private static func parseKeyAndValuePart(_ line: String, lineNumber: Int) throws -> (key: String, valuePart: String) {
         guard let equalsIndex = findTopLevelEquals(line) else {
             throw TOMLParseError.syntaxError(line: lineNumber)
         }
@@ -148,20 +176,117 @@ public enum TOMLParser {
             throw TOMLParseError.syntaxError(line: lineNumber)
         }
 
+        return (key, valuePart)
+    }
+
+    /// `= value` の右辺を解析する。文字列・クォート無し数値・真偽値のみ許容する
+    /// （配列は `parseArrayValue` 側で扱う）。
+    private static func parseScalarValue(_ valuePart: String, lineNumber: Int) throws -> String {
         if valuePart.hasPrefix("\"") {
-            let value = try parseBasicString(valuePart, lineNumber: lineNumber)
-            return (key, value)
+            return try parseBasicString(valuePart, lineNumber: lineNumber)
         }
 
         if valuePart == "true" || valuePart == "false" {
-            return (key, valuePart)
+            return valuePart
         }
 
         guard isNumberLiteral(valuePart) else {
             throw TOMLParseError.unsupportedValue(line: lineNumber)
         }
 
-        return (key, valuePart)
+        return valuePart
+    }
+
+    /// `= [...]` の右辺を1行の文字列配列として解析する。要素はダブルクォートの基本文字列のみ許容する。
+    /// 閉じ `]` が同じ行に無い場合は複数行配列とみなし `syntaxError` を投げる。
+    private static func parseArrayValue(_ valuePart: String, lineNumber: Int) throws -> [String] {
+        guard let closingIndex = findArrayClosingBracket(valuePart), valuePart.index(after: closingIndex) == valuePart.endIndex else {
+            throw TOMLParseError.syntaxError(line: lineNumber)
+        }
+
+        let inner = valuePart[valuePart.index(after: valuePart.startIndex)..<closingIndex]
+            .trimmingCharacters(in: .whitespaces)
+        if inner.isEmpty {
+            return []
+        }
+
+        var rawElements = splitTopLevelCommas(inner)
+        // 末尾カンマ（`["a", "b",]`）を許容するため、末尾の空要素は取り除く。
+        if let last = rawElements.last, last.trimmingCharacters(in: .whitespaces).isEmpty {
+            rawElements.removeLast()
+        }
+
+        var elements: [String] = []
+        for rawElement in rawElements {
+            let element = rawElement.trimmingCharacters(in: .whitespaces)
+            guard element.hasPrefix("\"") else {
+                throw TOMLParseError.unsupportedValue(line: lineNumber)
+            }
+            elements.append(try parseBasicString(element, lineNumber: lineNumber))
+        }
+        return elements
+    }
+
+    /// 配列リテラルの先頭 `[` に対応する閉じ `]` の位置を探す。文字列内の `[`/`]` は無視する。
+    private static func findArrayClosingBracket(_ s: String) -> String.Index? {
+        var depth = 0
+        var insideString = false
+        var escaped = false
+
+        var index = s.startIndex
+        while index < s.endIndex {
+            let char = s[index]
+            if insideString {
+                if escaped {
+                    escaped = false
+                } else if char == "\\" {
+                    escaped = true
+                } else if char == "\"" {
+                    insideString = false
+                }
+            } else if char == "\"" {
+                insideString = true
+            } else if char == "[" {
+                depth += 1
+            } else if char == "]" {
+                depth -= 1
+                if depth == 0 {
+                    return index
+                }
+            }
+            index = s.index(after: index)
+        }
+        return nil
+    }
+
+    /// 配列内側の文字列をトップレベルの `,` で分割する。文字列内の `,` は無視する。
+    private static func splitTopLevelCommas(_ s: String) -> [String] {
+        var parts: [String] = []
+        var insideString = false
+        var escaped = false
+
+        var start = s.startIndex
+        var index = s.startIndex
+        while index < s.endIndex {
+            let char = s[index]
+            if insideString {
+                if escaped {
+                    escaped = false
+                } else if char == "\\" {
+                    escaped = true
+                } else if char == "\"" {
+                    insideString = false
+                }
+            } else if char == "\"" {
+                insideString = true
+            } else if char == "," {
+                parts.append(String(s[start..<index]))
+                start = s.index(after: index)
+            }
+            index = s.index(after: index)
+        }
+        parts.append(String(s[start...]))
+        return parts
     }
 
     /// クォート無しの数値リテラル（整数・小数）かどうかを判定する。

@@ -351,6 +351,48 @@ struct ConfigTests {
         #expect(nonNumeric.inlineBlobThreshold == 64 * 1024)
     }
 
+    @Test("[snippet] の directories が snippetDirectories に読み込まれる")
+    func snippetDirectoriesIsLoadedFromConfig() throws {
+        let config = try Config.parse("""
+        [snippet]
+        directories = ["~/memo", "~/work/snippets"]
+        """)
+        #expect(config.snippetDirectories == ["~/memo", "~/work/snippets"])
+    }
+
+    @Test("[snippet] が無い場合は snippetDirectories が空配列になる")
+    func snippetDirectoriesDefaultsToEmptyWhenSnippetTableIsAbsent() throws {
+        let config = try Config.parse("")
+        #expect(config.snippetDirectories == [])
+    }
+
+    @Test("[snippet] の directories が空配列の場合は snippetDirectories が空配列になる")
+    func snippetDirectoriesIsEmptyWhenDirectoriesIsEmptyArray() throws {
+        let config = try Config.parse("""
+        [snippet]
+        directories = []
+        """)
+        #expect(config.snippetDirectories == [])
+    }
+
+    @Test("[snippet] の directories の空文字の要素が取り除かれる")
+    func snippetDirectoriesRemovesEmptyElements() throws {
+        let config = try Config.parse("""
+        [snippet]
+        directories = ["~/memo", ""]
+        """)
+        #expect(config.snippetDirectories == ["~/memo"])
+    }
+
+    @Test("[snippet] の directories を文字列で書いた場合は既定値の空配列にフォールバックする")
+    func snippetDirectoriesFallsBackToDefaultWhenNotAnArray() throws {
+        let config = try Config.parse("""
+        [snippet]
+        directories = "~/memo"
+        """)
+        #expect(config.snippetDirectories == [])
+    }
+
     @Test("存在しないファイルパスを load(from:) に渡すと empty が返る")
     func loadFromNonExistentFileReturnsEmpty() throws {
         let url = FileManager.default.temporaryDirectory
@@ -473,5 +515,29 @@ struct ConfigTests {
         edit_in_nvim = "invalid"
         """)
         #expect(config.editInNvimHotKey == nil)
+    }
+
+    @Test("[hotkey] の toggle_snippet_panel が読み込まれる")
+    func hotKeyBindingsLoadsToggleSnippetPanel() throws {
+        let config = try Config.parse("""
+        [hotkey]
+        toggle_snippet_panel = "ctrl+command+s"
+        """)
+        #expect(config.hotKeyBindings[.toggleSnippetPanel] == HotKeyBindingParser.parse("ctrl+command+s"))
+    }
+
+    @Test("[hotkey] が無い場合は hotKeyBindings に toggleSnippetPanel が含まれない")
+    func hotKeyBindingsExcludesToggleSnippetPanelWhenHotkeyTableIsAbsent() throws {
+        let config = try Config.parse("")
+        #expect(config.hotKeyBindings[.toggleSnippetPanel] == nil)
+    }
+
+    @Test("[hotkey] の toggle_snippet_panel の値が不正な場合は辞書に含まれない")
+    func hotKeyBindingsExcludesInvalidToggleSnippetPanelValue() throws {
+        let config = try Config.parse("""
+        [hotkey]
+        toggle_snippet_panel = "invalid"
+        """)
+        #expect(config.hotKeyBindings[.toggleSnippetPanel] == nil)
     }
 }

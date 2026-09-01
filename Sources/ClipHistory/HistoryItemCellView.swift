@@ -81,7 +81,11 @@ final class HistoryItemCellView: NSTableCellView {
 
     func configure(preview: String, sourceAppName: String, relativeTime: String, isMarked: Bool) {
         previewLabel.stringValue = preview.isEmpty ? "(空)" : preview
-        subtitleLabel.stringValue = "\(sourceAppName) ・ \(relativeTime)"
+        // 副情報を持たない一覧（Snippet、Issue 0030）では両方とも空文字で渡されるため、
+        // 空の項目を除いてから連結する。中黒だけが残らないようにするため。
+        subtitleLabel.stringValue = [sourceAppName, relativeTime]
+            .filter { !$0.isEmpty }
+            .joined(separator: " ・ ")
         // セルは NSTableView の再利用で使い回されるため、印が付いていない場合も
         // 必ず空文字で上書きする（前の行の印が残らないようにする）（Issue 0023）。
         markLabel.stringValue = isMarked ? ">" : ""

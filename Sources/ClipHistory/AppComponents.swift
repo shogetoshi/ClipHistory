@@ -14,6 +14,7 @@ final class AppComponents {
     private let clipboardMonitor: ClipboardMonitor
     private let maintenanceScheduler: MaintenanceScheduler
     private let pickerPanelController: PickerPanelController
+    private let snippetPanelController: PickerPanelController?
     private let clipboardCycler: ClipboardCycler
     private let cycleNotificationController: CycleNotificationController
     private let directVimEditController: DirectVimEditController
@@ -72,12 +73,36 @@ final class AppComponents {
         self.maintenanceScheduler = scheduler
 
         let resultsProvider = SearchResultsProvider(searchIndex: index, historyStore: historyStore)
-        let controller = PickerPanelController(
+        let historyContentSource = HistoryContentSource(
             historyStore: historyStore,
+            previewMaxCharacters: PickerViewController.previewMaxCharacters
+        )
+        let controller = PickerPanelController(
+            contentSource: historyContentSource,
             resultsProvider: resultsProvider,
             settings: settings
         )
         self.pickerPanelController = controller
+
+        // Snippet 用ディレクトリが設定されている場合のみ Snippet 一式を組み立てる（Issue 0030）。
+        // 空の場合は Snippet 機能を使わない設定のため何も作らない。
+        if !Config.shared.snippetDirectories.isEmpty {
+            let snippetStore = SnippetStore(directories: Config.shared.snippetDirectories)
+            let snippetResultsProvider = SnippetResultsProvider(store: snippetStore)
+            let snippetContentSource = SnippetContentSource(store: snippetStore)
+            let snippetController = PickerPanelController(
+                contentSource: snippetContentSource,
+                resultsProvider: snippetResultsProvider,
+                settings: settings,
+                showsItemMetadata: false
+            )
+            snippetController.onWillShow = { [weak snippetResultsProvider] in
+                snippetResultsProvider?.reload()
+            }
+            self.snippetPanelController = snippetController
+        } else {
+            self.snippetPanelController = nil
+        }
 
         let notificationController = CycleNotificationController()
         self.cycleNotificationController = notificationController
@@ -107,7 +132,8 @@ final class AppComponents {
         let continuousPaste = ContinuousPasteController(cycler: cycler)
         self.continuousPasteController = continuousPaste
 
-        self.hotKeyManager = HotKeyManager { [weak controller, weak cycler, weak directVimEdit, weak continuousPaste] action in
+        let snippetPanelController = self.snippetPanelController
+        self.hotKeyManager = HotKeyManager { [weak controller, weak cycler, weak directVimEdit, weak continuousPaste, weak snippetPanelController] action in
             switch action {
             case .togglePanel:
                 controller?.toggle()
@@ -119,6 +145,8 @@ final class AppComponents {
                 directVimEdit?.begin()
             case .pasteAndCyclePrevious:
                 continuousPaste?.pasteAndCycle()
+            case .toggleSnippetPanel:
+                snippetPanelController?.toggle()
             }
         }
     }

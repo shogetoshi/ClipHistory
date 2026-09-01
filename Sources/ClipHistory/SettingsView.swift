@@ -30,7 +30,8 @@ final class SettingsViewModel: ObservableObject {
             (.cyclePrevious, "1個前へ"),
             (.cycleNext, "1個後へ"),
             (.directVimEdit, "直接Vim編集"),
-            (.pasteAndCyclePrevious, "連続貼り付け")
+            (.pasteAndCyclePrevious, "連続貼り付け"),
+            (.toggleSnippetPanel, "Snippetパネル表示")
         ]
         var displays = actions.map { action, label in
             if let config = bindings[action] {

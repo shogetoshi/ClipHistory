@@ -20,6 +20,7 @@ macOS 用のクリップボード履歴アプリ。メニューバーに常駐�
 - **連続貼り付け** — ⌃⌘V で「貼り付け → 1個前へ」を繰り返す（この機能のみアクセシビリティ権限が必要）
 - **複数選択** — Tab で印を付けた複数の履歴を、印を付けた順に改行で結合して1回で貼り付け
 - **画像対応** — 画像のコピーも履歴に保存し、プレビュー表示・書き戻しができる
+- **Snippet 機能** — クリップボード履歴とは別のホットキーで開く2つ目のピッカー。`config.toml` の `[snippet]` で指定したディレクトリ配下の Markdown（`### 見出し` ごとに1アイテム）を検索・プレビューし、最初のコードブロックだけを貼り付けられる
 - **プライバシー** — パスワードマネージャ由来のデータ（`org.nspasteboard.ConcealedType`）は自動でスキップ。履歴はローカルの SQLite のみに保存し、外部へ送信しない
 - **軽量** — 履歴 10,000 件（設定で最大 100,000 件）を扱える。外部依存は [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) 1 件のみ
 
@@ -109,6 +110,7 @@ ClipHistory の行が残っていれば **「−」ボタンで削除**します
 | `cycle_next = "ctrl+command+n"` | パネルを開かず、クリップボードを履歴の1個後へ差し替える（⌃⌘N） |
 | `paste_and_cycle_previous = "command+ctrl+v"` | 今の内容を貼り付け、クリップボードを1個前へ進める（連続貼り付け、⌘⌃V） |
 | `direct_vim_edit = "command+ctrl+shift+c"` | パネルを開かず、今のクリップボードの内容を nvim で編集する（⌘⌃⇧C） |
+| `toggle_snippet_panel = "ctrl+command+s"` | Snippet パネルの表示 / 非表示（クリップボード履歴とは別のホットキー） |
 
 設定方法の詳細（キー名の一覧・書式）は下記「設定ファイル」を参照してください。
 
@@ -194,12 +196,16 @@ size = 12      # 一覧・検索欄・プレビューのフォントサイズ（
 [nvim.env]
 NVIM_CLIPHISTORY = "1"   # nvim 起動時に追加で渡す環境変数
 
+[snippet]
+directories = ["~/notes/snippets"]   # Snippet機能が走査するディレクトリ（再帰的に.mdを探す）
+
 [hotkey]
 toggle_panel = "ctrl+command+c"          # 履歴パネルの表示 / 非表示
 cycle_previous = "ctrl+command+p"        # パネルを開かず1個前へ
 cycle_next = "ctrl+command+n"            # パネルを開かず1個後へ
 direct_vim_edit = "command+ctrl+shift+c" # パネルを開かず直接nvim編集
 paste_and_cycle_previous = "command+ctrl+v" # 連続貼り付け
+toggle_snippet_panel = "ctrl+command+s"      # Snippetパネルの表示 / 非表示
 edit_in_nvim = "command+e"                  # パネル内でnvim編集を開始するキー
 ```
 
@@ -207,7 +213,7 @@ edit_in_nvim = "command+e"                  # パネル内でnvim編集を開始
 `command`/`ctrl`/`option`/`shift`（重複不可、1つ以上必須）、キーは `a`-`z` / `0`-`9` /
 `enter` / `space` / `escape`（すべて小文字）が使えます。**書かなかったアクションはホットキーとして
 登録されず、そのショートカットキーは使えなくなります**（他の設定項目と異なり既定値へのフォールバックはありません）。
-なお `edit_in_nvim`（Vim編集モードへ入るキー）だけは他の5項目と異なり、システム全体へ
+なお `edit_in_nvim`（Vim編集モードへ入るキー）だけは他の6項目と異なり、システム全体へ
 グローバル登録されるものではなく、ClipHistoryのパネルにフォーカスがある時だけ効くローカルな
 キー操作です。
 

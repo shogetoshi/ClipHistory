@@ -23,8 +23,7 @@ final class PickerViewController: NSViewController {
     /// `loadView()` を待たずに init 時点で生成済みのため lazy で保持できる。
     private lazy var nvimEditController = NvimEditModeController(container: previewPane)
 
-    private let historyStore: HistoryStore
-    private let previewContentLoader: PreviewContentLoader
+    private let contentSource: PickerContentSource
     private let viewModel: PickerViewModel
     private let settings: Settings
 
@@ -36,7 +35,7 @@ final class PickerViewController: NSViewController {
     // 一覧とプレビューの境界をドラッグでリサイズできるようにするハンドル（Issue 0018）。
     private let previewDividerHandle = PreviewDividerHandleView()
     /// プレビューとして読み込む最大文字数。一覧より大きく取り、長文もある程度確認できるようにする。
-    private static let previewMaxCharacters = 4000
+    static let previewMaxCharacters = 4000
 
     // 編集モードでのレイアウト差し替え用（Issue 0006）。通常時は previewPane を一覧の右45%に
     // 配置するが、nvim 編集中は全幅に広げる必要があるため、対象の制約をアクティブ/非アクティブ
@@ -48,10 +47,9 @@ final class PickerViewController: NSViewController {
     private static let cellIdentifier = NSUserInterfaceItemIdentifier("HistoryItemCell")
     private static let columnIdentifier = NSUserInterfaceItemIdentifier("HistoryItemColumn")
 
-    init(resultsProvider: ResultsProvider, settings: Settings, historyStore: HistoryStore) {
-        self.historyStore = historyStore
-        self.previewContentLoader = PreviewContentLoader(historyStore: historyStore, maxCharacters: Self.previewMaxCharacters)
-        self.viewModel = PickerViewModel(resultsProvider: resultsProvider)
+    init(resultsProvider: ResultsProvider, settings: Settings, contentSource: PickerContentSource, showsItemMetadata: Bool = true) {
+        self.contentSource = contentSource
+        self.viewModel = PickerViewModel(resultsProvider: resultsProvider, showsItemMetadata: showsItemMetadata)
         self.settings = settings
         super.init(nibName: nil, bundle: nil)
 
@@ -260,7 +258,7 @@ final class PickerViewController: NSViewController {
             previewPane.show(.empty)
             return
         }
-        previewPane.show(previewContentLoader.content(for: item))
+        previewPane.show(contentSource.previewContent(for: item))
     }
 
     /// 印を付けたアイテム（Issue 0023）の本文を順に読み込み、改行で結合して返す。
@@ -268,14 +266,10 @@ final class PickerViewController: NSViewController {
     private func joinedMarkedText() -> String {
         var texts: [String] = []
         for item in viewModel.markedItems {
-            do {
-                guard let loaded = try historyStore.loadFullText(itemID: item.id) else {
-                    continue
-                }
-                texts.append(loaded)
-            } catch {
-                NSLog("ClipHistory: HistoryStore.loadFullText(itemID:) failed: \(error)")
+            guard let loaded = contentSource.editableText(for: item) else {
+                continue
             }
+            texts.append(loaded)
         }
         return MarkedSelection.joinedText(texts)
     }
@@ -471,16 +465,8 @@ final class PickerViewController: NSViewController {
             return
         }
 
-        let text: String
-        do {
-            guard let loaded = try historyStore.loadFullText(itemID: item.id) else {
-                NSLog("ClipHistory: HistoryStore.loadFullText(itemID:) returned nil")
-                NSSound.beep()
-                return
-            }
-            text = loaded
-        } catch {
-            NSLog("ClipHistory: HistoryStore.loadFullText(itemID:) failed: \(error)")
+        guard let text = contentSource.editableText(for: item) else {
+            NSLog("ClipHistory: PickerContentSource.editableText(for:) returned nil")
             NSSound.beep()
             return
         }

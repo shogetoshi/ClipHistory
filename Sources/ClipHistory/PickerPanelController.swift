@@ -6,7 +6,7 @@ import ClipHistoryCore
 final class PickerPanelController: NSObject {
     private let panel: PickerPanel
     private let pickerViewController: PickerViewController
-    private let historyStore: HistoryStore
+    private let contentSource: PickerContentSource
     private let settings: Settings
 
     private static let panelSize = NSSize(width: 720, height: 420)
@@ -17,12 +17,17 @@ final class PickerPanelController: NSObject {
     /// （設計書 7.3 手順1・3）。
     private var previousFrontmostApp: NSRunningApplication?
 
-    init(historyStore: HistoryStore, resultsProvider: ResultsProvider, settings: Settings) {
-        self.historyStore = historyStore
+    /// パネル表示直前に呼ばれる。Snippet は `.md` を外部エディタで編集されるため、
+    /// 開くたびに読み直す必要がある（Issue 0030）。クリップボード履歴側は設定しないため、
+    /// 従来どおり何も起こらない。
+    var onWillShow: (() -> Void)?
+
+    init(contentSource: PickerContentSource, resultsProvider: ResultsProvider, settings: Settings, showsItemMetadata: Bool = true) {
+        self.contentSource = contentSource
         self.settings = settings
         let contentRect = NSRect(origin: .zero, size: Self.panelSize)
         panel = PickerPanel(contentRect: contentRect)
-        pickerViewController = PickerViewController(resultsProvider: resultsProvider, settings: settings, historyStore: historyStore)
+        pickerViewController = PickerViewController(resultsProvider: resultsProvider, settings: settings, contentSource: contentSource, showsItemMetadata: showsItemMetadata)
         super.init()
 
         panel.contentViewController = pickerViewController
@@ -58,6 +63,8 @@ final class PickerPanelController: NSObject {
         // ホットキー受信時点の frontmost アプリを保持しておく（設計書 7.3 手順1）
         previousFrontmostApp = NSWorkspace.shared.frontmostApplication
 
+        onWillShow?()
+
         positionPanel()
         pickerViewController.willShow()
 
@@ -87,11 +94,13 @@ final class PickerPanelController: NSObject {
         }
     }
 
+    /// 書き戻す内容が無い場合はビープするだけで、クリップボードもパネルも変えない。
+    /// Snippet で ``` のブロックを持たないアイテムを選んだ場合がこれにあたる（Issue 0030）。
+    /// クリップボード履歴の項目は常に書き戻せるため、この経路には入らない。
     private func commit(_ item: HistoryItem) {
-        do {
-            try writeToPasteboard(item)
-        } catch {
-            NSLog("ClipHistory: failed to write pasteboard: \(error)")
+        guard contentSource.writeToPasteboard(item) else {
+            NSSound.beep()
+            return
         }
         panel.orderOut(nil)
         restoreFocus()
@@ -120,22 +129,6 @@ final class PickerPanelController: NSObject {
     private func restoreFocus() {
         previousFrontmostApp?.activate()
         previousFrontmostApp = nil
-    }
-
-    /// 選択項目の全表現を `NSPasteboard` へ書き戻す。v1 はテキストのみ扱うが、
-    /// representations を回して書く汎用実装にしておく（将来の画像・ファイル対応の継ぎ目）。
-    ///
-    /// 書き戻しにより `changeCount` が変化するため、`ClipboardMonitor` が通常の変更検知として
-    /// 拾い、新規レコードとして履歴の最新に追加される。これは仕様であり、意図的に
-    /// 書き戻しは抑制しない（設計書 3.2 手順4）。
-    private func writeToPasteboard(_ item: HistoryItem) throws {
-        let representations = try historyStore.fetchRepresentations(itemID: item.id)
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        for representation in representations {
-            let data = try historyStore.loadData(for: representation)
-            pasteboard.setData(data, forType: NSPasteboard.PasteboardType(representation.uti))
-        }
     }
 
     /// 保存済みの位置・大きさがあればそれを復元し、なければアクティブなスクリーン（マウスカーソルが
