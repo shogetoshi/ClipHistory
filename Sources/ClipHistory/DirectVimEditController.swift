@@ -50,10 +50,6 @@ final class DirectVimEditController: NSObject {
         panel.contentMinSize = Self.panelMinSize
         panel.delegate = self
 
-        background.keyEquivalentHandler = { [weak self] event in
-            self?.handleKeyEquivalent(event) ?? false
-        }
-
         nvimEditController.onEditingChanged = { [weak self] editing in
             guard let self, !editing else { return }
             // isEditing が false になるのは finish(commit:) / nvim 終了のいずれかの経路
@@ -84,24 +80,6 @@ final class DirectVimEditController: NSObject {
         panel.makeKeyAndOrderFront(nil)
 
         nvimEditController.begin(text: text)
-    }
-
-    /// ⌘↩（確定）/ ⌘.（破棄）のみを扱う。⌘E はブラウズ状態を持たないこのウィンドウには
-    /// 存在しないため扱わない（`PickerViewController.handleKeyEquivalent` との違い）。
-    private func handleKeyEquivalent(_ event: NSEvent) -> Bool {
-        guard event.type == .keyDown else { return false }
-        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command else { return false }
-
-        switch event.charactersIgnoringModifiers {
-        case "\r":
-            nvimEditController.finish(commit: true)
-            return true
-        case ".":
-            nvimEditController.finish(commit: false)
-            return true
-        default:
-            return false
-        }
     }
 
     private func hideAndRestoreFocus() {
