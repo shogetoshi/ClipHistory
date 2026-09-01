@@ -62,6 +62,9 @@ final class PreviewPaneView: NSBox {
         borderWidth = TerminalTheme.borderWidth
         cornerRadius = 6
         titlePosition = .noTitle
+        wantsLayer = true
+        layer?.cornerRadius = cornerRadius
+        layer?.masksToBounds = true
         addSubview(scrollView)
 
         // 画像プレビュー（Issue 0004）。テキスト側の scrollView と同じ領域に重ねて配置し、
