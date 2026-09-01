@@ -44,7 +44,7 @@ final class PanelBackgroundView: NSView {
     override var wantsUpdateLayer: Bool { true }
 
     /// ⌘系のキー等価をビュー階層の探索より先に横取りするためのフック。
-    /// 編集モードの ⌘E / ⌘↩ / ⌘. を、検索フィールドやターミナルにフォーカスがある状態でも
+    /// 編集モードを開始する ⌘E を、検索フィールドやターミナルにフォーカスがある状態でも
     /// 確実に受け取るために使う（Issue 0006）。
     var keyEquivalentHandler: ((NSEvent) -> Bool)?
 
