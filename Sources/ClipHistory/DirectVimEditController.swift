@@ -52,7 +52,7 @@ final class DirectVimEditController: NSObject {
 
         nvimEditController.onEditingChanged = { [weak self] editing in
             guard let self, !editing else { return }
-            // isEditing が false になるのは finish(commit:) / nvim 終了のいずれかの経路
+            // isEditing が false になるのは finish() / nvim 終了のいずれかの経路
             // （NvimEditModeController.tearDown() 内）であり、このウィンドウの唯一の状態は
             // 「編集中」なので、編集が終わったらウィンドウを閉じてフォーカスを戻してよい。
             self.hideAndRestoreFocus()

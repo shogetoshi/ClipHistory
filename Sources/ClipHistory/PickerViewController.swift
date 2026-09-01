@@ -223,7 +223,7 @@ final class PickerViewController: NSViewController {
     /// 最新の結果を再取得して最終行（最新のアイテム）を選択したうえで、検索フィールドへ入力フォーカスを移す。
     func willShow() {
         // パネルが何らかの理由で編集モードのまま再表示された場合に備えた保険（Issue 0006）。
-        nvimEditController.finish(commit: false)
+        nvimEditController.finish()
         searchField.stringValue = ""
         // パネルを開くたびに印はリセットする（Issue 0023）。
         viewModel.clearMarks()

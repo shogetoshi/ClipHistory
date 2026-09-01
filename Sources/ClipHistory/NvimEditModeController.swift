@@ -74,33 +74,16 @@ final class NvimEditModeController: NSObject {
         return true
     }
 
-    /// nvim 編集モードを終了する（Issue 0006）。
-    /// - Parameter commit: `true` の場合のみ編集結果を読み戻して `onCommit` を呼ぶ。
-    func finish(commit: Bool) {
+    /// nvim 編集モードを、確定せずに終了する（Issue 0006）。
+    /// パネルが何らかの理由で編集モードのまま再表示された場合の保険として使う。
+    func finish() {
         guard isEditing else { return }
-
-        var editedText: String?
-        if commit {
-            do {
-                editedText = try session?.readEditedText()
-            } catch {
-                // 読み戻しに失敗しても、編集モードは終了させたうえで確定はしない。
-                NSLog("ClipHistory: NvimEditSession.readEditedText() failed: \(error)")
-                NSSound.beep()
-            }
-        }
-
         tearDown()
-
-        // onCommit はパネルを閉じるコールバックのため、後片付けが全て終わった後に呼ぶ。
-        if let editedText {
-            onCommit?(editedText)
-        }
     }
 
     /// nvim 編集モードの後片付けを行う（Issue 0007）。
     /// nvim セッションの終了・破棄、ターミナルビューの取り外し、レイアウトの復元をまとめる。
-    /// `finish(commit:)` と `processTerminated(source:exitCode:)` の双方から共通で呼ばれる。
+    /// `finish()` と `processTerminated(source:exitCode:)` の双方から共通で呼ばれる。
     private func tearDown() {
         session?.requestQuit()
         session?.cleanUp()
