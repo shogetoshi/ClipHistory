@@ -119,6 +119,9 @@ final class AppComponents {
                 directVimEdit?.begin()
             case .pasteAndCyclePrevious:
                 continuousPaste?.pasteAndCycle()
+            case .toggleSnippetPanel:
+                // Snippet パネル本体はまだ組み立てていないため、この時点では何もしない。
+                break
             }
         }
     }

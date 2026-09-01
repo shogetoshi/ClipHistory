@@ -233,6 +233,7 @@ public struct Config: Equatable {
             ("cycle_next", .cycleNext),
             ("direct_vim_edit", .directVimEdit),
             ("paste_and_cycle_previous", .pasteAndCyclePrevious),
+            ("toggle_snippet_panel", .toggleSnippetPanel),
         ]
         for (tomlKey, action) in hotKeyTomlKeys {
             if let value = tables["hotkey"]?[tomlKey] {

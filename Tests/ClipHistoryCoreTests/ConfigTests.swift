@@ -516,4 +516,28 @@ struct ConfigTests {
         """)
         #expect(config.editInNvimHotKey == nil)
     }
+
+    @Test("[hotkey] の toggle_snippet_panel が読み込まれる")
+    func hotKeyBindingsLoadsToggleSnippetPanel() throws {
+        let config = try Config.parse("""
+        [hotkey]
+        toggle_snippet_panel = "ctrl+command+s"
+        """)
+        #expect(config.hotKeyBindings[.toggleSnippetPanel] == HotKeyBindingParser.parse("ctrl+command+s"))
+    }
+
+    @Test("[hotkey] が無い場合は hotKeyBindings に toggleSnippetPanel が含まれない")
+    func hotKeyBindingsExcludesToggleSnippetPanelWhenHotkeyTableIsAbsent() throws {
+        let config = try Config.parse("")
+        #expect(config.hotKeyBindings[.toggleSnippetPanel] == nil)
+    }
+
+    @Test("[hotkey] の toggle_snippet_panel の値が不正な場合は辞書に含まれない")
+    func hotKeyBindingsExcludesInvalidToggleSnippetPanelValue() throws {
+        let config = try Config.parse("""
+        [hotkey]
+        toggle_snippet_panel = "invalid"
+        """)
+        #expect(config.hotKeyBindings[.toggleSnippetPanel] == nil)
+    }
 }

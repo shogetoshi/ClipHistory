@@ -32,6 +32,8 @@ public enum HotKeyAction: UInt32 {
     case directVimEdit = 4
     /// 今の内容を貼り付けて、クリップボードを1個前へ進める（連続貼り付け）
     case pasteAndCyclePrevious = 5
+    /// Snippet パネルの表示/非表示をトグルする（Issue 0030）
+    case toggleSnippetPanel = 6
 }
 
 /// グローバルホットキーの登録・解除を担う。
