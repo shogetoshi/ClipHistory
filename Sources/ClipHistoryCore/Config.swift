@@ -33,6 +33,10 @@ public struct Config: Equatable {
     /// BLOB をインラインで保存するサイズの閾値（バイト）（TOML の `[storage]` テーブルの `inline_blob_threshold`）。
     public var inlineBlobThreshold: Int
 
+    /// Snippet 機能が走査する対象ディレクトリ（TOML の `[snippet]` テーブルの `directories`）。
+    /// 空（未設定）なら Snippet 機能は使わない。
+    public var snippetDirectories: [String]
+
     /// TOML の [hotkey] テーブルから読み込んだホットキー設定。キーが無い、または値が不正な
     /// アクションは辞書に含めない（他の設定項目と異なり既定値へのフォールバックはしない。
     /// 設定が無ければそのホットキーは登録されず機能を呼び出せなくなる、design 10.2）。
@@ -56,6 +60,7 @@ public struct Config: Equatable {
         skipConcealed: true,
         resultLimit: 200,
         inlineBlobThreshold: 64 * 1024,
+        snippetDirectories: [],
         hotKeyBindings: [:],
         editInNvimHotKey: nil
     )
@@ -71,6 +76,7 @@ public struct Config: Equatable {
         skipConcealed: Bool = true,
         resultLimit: Int = 200,
         inlineBlobThreshold: Int = 64 * 1024,
+        snippetDirectories: [String] = [],
         hotKeyBindings: [HotKeyAction: HotKeyConfig] = [:],
         editInNvimHotKey: HotKeyConfig? = nil
     ) {
@@ -84,6 +90,7 @@ public struct Config: Equatable {
         self.skipConcealed = skipConcealed
         self.resultLimit = resultLimit
         self.inlineBlobThreshold = inlineBlobThreshold
+        self.snippetDirectories = snippetDirectories
         self.hotKeyBindings = hotKeyBindings
         self.editInNvimHotKey = editInNvimHotKey
     }
@@ -91,7 +98,8 @@ public struct Config: Equatable {
     /// TOML テキストをパースして組み立てる。未知のテーブル・未知のキーはエラーにせず無視する
     /// （将来の設定項目追加で古いバイナリが壊れないようにするため）。
     public static func parse(_ text: String) throws -> Config {
-        let tables = try TOMLParser.parse(text)
+        let document = try TOMLParser.parseDocument(text)
+        let tables = document.tables
         let nvimEnvironment = tables["nvim.env"] ?? [:]
 
         // `timeout` の値が不正（数値に変換できない・0以下・非有限）でも throw はしない。
@@ -202,6 +210,20 @@ public struct Config: Equatable {
             }
         }
 
+        // `directories` の値が不正（配列でない・空文字要素を含む）でも throw はしない。
+        // 設定ファイルの些細な不備でアプリが起動不能になるのを避ける方針のため
+        // （design 13.3、および `loadDefault()` と同じ方針）、警告を残して既定値を使う。
+        var snippetDirectories: [String] = []
+        if document.tables["snippet"]?["directories"] != nil {
+            NSLog("ClipHistory: Config.parse() [snippet] directories must be an array, using default []")
+        } else if let directoriesArray = document.arrays["snippet"]?["directories"] {
+            let nonEmptyDirectories = directoriesArray.filter { !$0.isEmpty }
+            if nonEmptyDirectories.count != directoriesArray.count {
+                NSLog("ClipHistory: Config.parse() [snippet] directories contains empty elements, removed")
+            }
+            snippetDirectories = nonEmptyDirectories
+        }
+
         // ホットキーは他の設定項目と異なり、値が無い・不正でも既定値へフォールバックしない。
         // 設定が無ければそのホットキーは登録されず機能を呼び出せなくなる（design 10.2）。
         var hotKeyBindings: [HotKeyAction: HotKeyConfig] = [:]
@@ -242,6 +264,7 @@ public struct Config: Equatable {
             skipConcealed: skipConcealed,
             resultLimit: resultLimit,
             inlineBlobThreshold: inlineBlobThreshold,
+            snippetDirectories: snippetDirectories,
             hotKeyBindings: hotKeyBindings,
             editInNvimHotKey: editInNvimHotKey
         )
