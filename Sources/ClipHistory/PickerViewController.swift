@@ -47,9 +47,9 @@ final class PickerViewController: NSViewController {
     private static let cellIdentifier = NSUserInterfaceItemIdentifier("HistoryItemCell")
     private static let columnIdentifier = NSUserInterfaceItemIdentifier("HistoryItemColumn")
 
-    init(resultsProvider: ResultsProvider, settings: Settings, contentSource: PickerContentSource) {
+    init(resultsProvider: ResultsProvider, settings: Settings, contentSource: PickerContentSource, showsItemMetadata: Bool = true) {
         self.contentSource = contentSource
-        self.viewModel = PickerViewModel(resultsProvider: resultsProvider)
+        self.viewModel = PickerViewModel(resultsProvider: resultsProvider, showsItemMetadata: showsItemMetadata)
         self.settings = settings
         super.init(nibName: nil, bundle: nil)
 

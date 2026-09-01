@@ -17,12 +17,12 @@ final class PickerPanelController: NSObject {
     /// （設計書 7.3 手順1・3）。
     private var previousFrontmostApp: NSRunningApplication?
 
-    init(contentSource: PickerContentSource, resultsProvider: ResultsProvider, settings: Settings) {
+    init(contentSource: PickerContentSource, resultsProvider: ResultsProvider, settings: Settings, showsItemMetadata: Bool = true) {
         self.contentSource = contentSource
         self.settings = settings
         let contentRect = NSRect(origin: .zero, size: Self.panelSize)
         panel = PickerPanel(contentRect: contentRect)
-        pickerViewController = PickerViewController(resultsProvider: resultsProvider, settings: settings, contentSource: contentSource)
+        pickerViewController = PickerViewController(resultsProvider: resultsProvider, settings: settings, contentSource: contentSource, showsItemMetadata: showsItemMetadata)
         super.init()
 
         panel.contentViewController = pickerViewController

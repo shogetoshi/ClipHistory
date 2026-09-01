@@ -19,6 +19,9 @@ final class PickerViewModel {
 
     private let resultsProvider: ResultsProvider
 
+    /// Snippet にはアプリ名も時刻も無いため副情報を出さない（Issue 0030）。
+    private let showsItemMetadata: Bool
+
     private(set) var items: [HistoryItem] = []
 
     /// tabキーによる複数選択（印付け）の状態（Issue 0023）。検索の絞り込みが変わっても
@@ -37,8 +40,9 @@ final class PickerViewModel {
         return formatter
     }()
 
-    init(resultsProvider: ResultsProvider) {
+    init(resultsProvider: ResultsProvider, showsItemMetadata: Bool = true) {
         self.resultsProvider = resultsProvider
+        self.showsItemMetadata = showsItemMetadata
     }
 
     var count: Int { items.count }
@@ -82,16 +86,27 @@ final class PickerViewModel {
     /// 指定行の表示文字列を組み立てる。
     func rowDisplay(at row: Int) -> HistoryRowDisplay? {
         guard let item = item(at: row) else { return nil }
-        let relativeTime = relativeFormatter.localizedString(
-            for: Date(timeIntervalSince1970: Double(item.createdAt) / 1000),
-            relativeTo: Date()
-        )
+        // Snippet にはアプリ名も時刻も無いため、showsItemMetadata が false の場合は
+        // 副情報（アプリ名・相対時刻）を空文字にし、relativeFormatter による整形自体も行わない
+        // （Issue 0030）。
+        let sourceAppName: String
+        let relativeTime: String
+        if showsItemMetadata {
+            sourceAppName = item.sourceAppName ?? "不明なアプリ"
+            relativeTime = relativeFormatter.localizedString(
+                for: Date(timeIntervalSince1970: Double(item.createdAt) / 1000),
+                relativeTo: Date()
+            )
+        } else {
+            sourceAppName = ""
+            relativeTime = ""
+        }
         // 一覧は表示専用の整形を通す（修正2）。DB の preview_text 自体は変更しない。
         // 複数行のコピー内容がそのまま描画されると改行の数だけ行内を占め、行の見た目が
         // 不揃いになるため、改行・タブ・連続空白を半角スペース1個へ畳んでから渡す。
         return HistoryRowDisplay(
             preview: DisplayText.singleLine(item.previewText ?? ""),
-            sourceAppName: item.sourceAppName ?? "不明なアプリ",
+            sourceAppName: sourceAppName,
             relativeTime: relativeTime,
             isMarked: markedSelection.contains(itemID: item.id)
         )
