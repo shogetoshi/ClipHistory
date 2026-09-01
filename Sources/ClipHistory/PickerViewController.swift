@@ -361,21 +361,7 @@ final class PickerViewController: NSViewController {
             return false
         }
 
-        switch event.charactersIgnoringModifiers {
-        case "\r":
-            // Esc は nvim 側が（ノーマルモード復帰等に）使うため確定には使えない。
-            // そのため確定は ⌘↩ に割り当てる。編集モードでなければ通常の確定（Enter）に譲る。
-            guard isEditingInNvim else { return false }
-            nvimEditController.finish(commit: true)
-            return true
-        case ".":
-            // Esc が使えない都合上、破棄も ⌘. に割り当てる。
-            guard isEditingInNvim else { return false }
-            nvimEditController.finish(commit: false)
-            return true
-        default:
-            return false
-        }
+        return false
     }
 
     /// NSEvent の修飾キーフラグを Carbon の修飾キーマスクへ変換し、`HotKeyConfig` と一致するか判定する。
