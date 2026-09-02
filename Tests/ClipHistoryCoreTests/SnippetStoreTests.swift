@@ -98,6 +98,37 @@ struct SnippetStoreTests {
         #expect(snippet?.fullText.hasPrefix("### rebase onto") == true)
     }
 
+    @Test("sourceLocation(id:)でファイルパスと見出しの行番号が引ける")
+    func sourceLocationReturnsFilePathAndLineNumber() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ClipHistoryTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let filePath = tempDir.appendingPathComponent("git.md")
+        let markdown = """
+        ### branch rename master to main
+        本文1
+
+        ### rebase onto
+        本文2
+        """
+        try markdown.write(to: filePath, atomically: true, encoding: .utf8)
+
+        let store = SnippetStore(directories: [tempDir.path])
+        store.reload()
+
+        #expect(store.items.count == 2)
+        let secondID = store.items[1].id
+        let location = store.sourceLocation(id: secondID)
+        // 一時ディレクトリは /var と /private/var のシンボリックリンクを跨ぐため、
+        // 実体パス（realpath）で比較する。
+        var buffer = [Int8](repeating: 0, count: Int(PATH_MAX))
+        let expectedPath = realpath(filePath.path, &buffer).map { String(cString: $0) } ?? filePath.path
+        #expect(location?.filePath == expectedPath)
+        #expect(location?.lineNumber == 4)
+    }
+
     @Test("items(ids:)が渡したidの順序を保つ")
     func itemsPreservesArgumentOrder() throws {
         let tempDir = FileManager.default.temporaryDirectory

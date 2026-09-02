@@ -114,6 +114,27 @@ struct SnippetParserTests {
         #expect(items.isEmpty)
     }
 
+    @Test("headingLineNumberが1始まりの###行番号になる")
+    func headingLineNumberMatchesOneBasedHeadingLine() {
+        let markdown = """
+        ### first
+        本文1
+
+        ### second
+        本文2
+        本文3
+
+        ### third
+        本文4
+        """
+
+        let items = SnippetParser.parse(markdown: markdown)
+        #expect(items.count == 3)
+        #expect(items[0].headingLineNumber == 1)
+        #expect(items[1].headingLineNumber == 4)
+        #expect(items[2].headingLineNumber == 8)
+    }
+
     @Test("タイトルが空の見出しは結果に含まれない")
     func headingWithEmptyTitleIsExcluded() {
         let markdown = """

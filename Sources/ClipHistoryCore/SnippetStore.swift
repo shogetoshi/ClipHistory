@@ -1,5 +1,16 @@
 import Foundation
 
+/// Snippet アイテムの出どころ（ソース .md ファイルのパスと、見出し行の1始まり行番号）
+public struct SnippetSourceLocation: Equatable {
+    public let filePath: String
+    public let lineNumber: Int
+
+    public init(filePath: String, lineNumber: Int) {
+        self.filePath = filePath
+        self.lineNumber = lineNumber
+    }
+}
+
 /// 設定ディレクトリ配下の `.md` ファイルを再帰的に走査し、Snippet アイテムの一覧を保持する。
 ///
 /// Snippet 専用の行の型は新設せず `HistoryItem` を流用して変換する。理由は `ResultsProvider` /
@@ -11,6 +22,7 @@ public final class SnippetStore {
     private var loadedItems: [HistoryItem] = []
     private var loadedIndexEntries: [IndexEntry] = []
     private var snippetsByID: [Int64: SnippetItem] = [:]
+    private var sourceLocationsByID: [Int64: SnippetSourceLocation] = [:]
 
     public init(directories: [String]) {
         self.directories = directories
@@ -27,6 +39,7 @@ public final class SnippetStore {
         var items: [HistoryItem] = []
         var indexEntries: [IndexEntry] = []
         var snippetsByID: [Int64: SnippetItem] = [:]
+        var sourceLocationsByID: [Int64: SnippetSourceLocation] = [:]
 
         // 同じファイルが複数のディレクトリ指定から二重に見つかった場合、後から見つかった
         // ほうを読み飛ばすため、ここまでに読んだファイルパスを覚えておく。
@@ -94,6 +107,7 @@ public final class SnippetStore {
                     ))
                     indexEntries.append(IndexEntry(id: id, createdAt: id, searchKey: searchKey))
                     snippetsByID[id] = snippetItem
+                    sourceLocationsByID[id] = SnippetSourceLocation(filePath: path, lineNumber: snippetItem.headingLineNumber)
                 }
             }
         }
@@ -101,11 +115,17 @@ public final class SnippetStore {
         loadedItems = items
         loadedIndexEntries = indexEntries
         self.snippetsByID = snippetsByID
+        self.sourceLocationsByID = sourceLocationsByID
     }
 
     /// id に対応する Snippet の中身（プレビュー全文とコードブロック）
     public func snippet(id: Int64) -> SnippetItem? {
         snippetsByID[id]
+    }
+
+    /// id に対応する Snippet の出どころ（ソース .md ファイルのパスと見出し行番号）
+    public func sourceLocation(id: Int64) -> SnippetSourceLocation? {
+        sourceLocationsByID[id]
     }
 
     /// id 列に対応する行を、渡された順序を保って返す（`HistoryStore.fetchItems(ids:)` と同じ役割）

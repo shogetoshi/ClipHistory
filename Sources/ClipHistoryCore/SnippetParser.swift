@@ -8,6 +8,8 @@ public struct SnippetItem: Equatable {
     public let fullText: String
     /// アイテム内で最初に現れる ``` の開閉の中身。無ければ nil（クリップボードに入れる値）
     public let codeBlock: String?
+    /// `###` 見出し行の1始まりの行番号
+    public let headingLineNumber: Int
 }
 
 /// Snippet 用 Markdown ファイルを、`###` 区切りのアイテム列にパースする。
@@ -46,7 +48,8 @@ public enum SnippetParser {
                 SnippetItem(
                     title: title,
                     fullText: fullText,
-                    codeBlock: extractFirstCodeBlock(itemLines: Array(itemLines))
+                    codeBlock: extractFirstCodeBlock(itemLines: Array(itemLines)),
+                    headingLineNumber: start + 1
                 )
             )
         }
