@@ -41,4 +41,9 @@ final class SnippetContentSource: PickerContentSource {
         pasteboard.setData(data, forType: NSPasteboard.PasteboardType(PasteboardTextType.utf8PlainText))
         return true
     }
+
+    /// アイテムを切り出した .md ファイル本体のパスと、その `###` 見出し行の行番号（Issue 0032）。
+    func sourceLocation(for item: HistoryItem) -> SnippetSourceLocation? {
+        store.sourceLocation(id: item.id)
+    }
 }
