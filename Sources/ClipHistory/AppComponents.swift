@@ -90,11 +90,13 @@ final class AppComponents {
             let snippetStore = SnippetStore(directories: Config.shared.snippetDirectories)
             let snippetResultsProvider = SnippetResultsProvider(store: snippetStore)
             let snippetContentSource = SnippetContentSource(store: snippetStore)
+            // Snippet は検索窓を上・結果を上から下に表示する（Issue 0031）。
             let snippetController = PickerPanelController(
                 contentSource: snippetContentSource,
                 resultsProvider: snippetResultsProvider,
                 settings: settings,
-                showsItemMetadata: false
+                showsItemMetadata: false,
+                isTopDown: true
             )
             snippetController.onWillShow = { [weak snippetResultsProvider] in
                 snippetResultsProvider?.reload()

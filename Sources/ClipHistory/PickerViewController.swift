@@ -26,6 +26,8 @@ final class PickerViewController: NSViewController {
     private let contentSource: PickerContentSource
     private let viewModel: PickerViewModel
     private let settings: Settings
+    /// 検索窓を上に、結果を上から下へ表示するレイアウトかどうか（Issue 0031、Snippet 用）。
+    private let isTopDown: Bool
 
     private let searchField = NSSearchField()
     private let tableView = NSTableView()
@@ -47,10 +49,11 @@ final class PickerViewController: NSViewController {
     private static let cellIdentifier = NSUserInterfaceItemIdentifier("HistoryItemCell")
     private static let columnIdentifier = NSUserInterfaceItemIdentifier("HistoryItemColumn")
 
-    init(resultsProvider: ResultsProvider, settings: Settings, contentSource: PickerContentSource, showsItemMetadata: Bool = true) {
+    init(resultsProvider: ResultsProvider, settings: Settings, contentSource: PickerContentSource, showsItemMetadata: Bool = true, isTopDown: Bool = false) {
         self.contentSource = contentSource
-        self.viewModel = PickerViewModel(resultsProvider: resultsProvider, showsItemMetadata: showsItemMetadata)
+        self.viewModel = PickerViewModel(resultsProvider: resultsProvider, showsItemMetadata: showsItemMetadata, isTopDown: isTopDown)
         self.settings = settings
+        self.isTopDown = isTopDown
         super.init(nibName: nil, bundle: nil)
 
         viewModel.onItemsChanged = { [weak self] in
@@ -185,20 +188,36 @@ final class PickerViewController: NSViewController {
             view.setContentHuggingPriority(.defaultLow, for: .vertical)
         }
 
-        NSLayoutConstraint.activate([
-            searchField.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -16),
+        // 検索窓・一覧・プレビューの垂直方向の制約だけを isTopDown で切り替える。
+        // 通常時（false）は検索窓を下端に、Snippet 用（true）は検索窓を上端に置く（Issue 0031）。
+        let verticalConstraints: [NSLayoutConstraint]
+        if isTopDown {
+            verticalConstraints = [
+                searchField.topAnchor.constraint(equalTo: root.topAnchor, constant: 16),
+                scrollView.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 12),
+                scrollView.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -16),
+                previewPane.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 12),
+                previewPane.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -16)
+            ]
+        } else {
+            verticalConstraints = [
+                searchField.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -16),
+                scrollView.topAnchor.constraint(equalTo: root.topAnchor, constant: 16),
+                scrollView.bottomAnchor.constraint(equalTo: searchField.topAnchor, constant: -12),
+                previewPane.topAnchor.constraint(equalTo: root.topAnchor, constant: 16),
+                previewPane.bottomAnchor.constraint(equalTo: searchField.topAnchor, constant: -12)
+            ]
+        }
+
+        NSLayoutConstraint.activate(verticalConstraints + [
             searchField.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16),
             searchField.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -16),
             searchField.heightAnchor.constraint(equalToConstant: 28),
 
-            scrollView.topAnchor.constraint(equalTo: root.topAnchor, constant: 16),
             scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16),
-            scrollView.bottomAnchor.constraint(equalTo: searchField.topAnchor, constant: -12),
 
-            previewPane.topAnchor.constraint(equalTo: root.topAnchor, constant: 16),
             previewLeadingNormalConstraint,
             previewPane.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -16),
-            previewPane.bottomAnchor.constraint(equalTo: searchField.topAnchor, constant: -12),
             previewWidthConstraint,
 
             previewDividerHandle.topAnchor.constraint(equalTo: scrollView.topAnchor),
@@ -234,10 +253,12 @@ final class PickerViewController: NSViewController {
     private func applyItems() {
         tableView.reloadData()
         if viewModel.count > 0 {
-            // 反転後は最終行が最新のアイテムになるため、最終行を選択する（Issue 0003）。
-            let lastRow = viewModel.count - 1
-            tableView.selectRowIndexes(IndexSet(integer: lastRow), byExtendingSelection: false)
-            tableView.scrollRowToVisible(lastRow)
+            // isTopDown の場合（Snippet）は反転せず先頭行が最上位のため、先頭行を選択する
+            // （Issue 0031）。それ以外（従来どおり）は反転後の最終行が最新のアイテムになるため、
+            // 最終行を選択する（Issue 0003）。
+            let defaultRow = isTopDown ? 0 : viewModel.count - 1
+            tableView.selectRowIndexes(IndexSet(integer: defaultRow), byExtendingSelection: false)
+            tableView.scrollRowToVisible(defaultRow)
         }
         // selectRowIndexes は選択が実際に変わらない場合（例: 既に最終行が選択済み）に
         // tableViewSelectionDidChange を発火しないため、items が空になったケースなどで

@@ -22,12 +22,12 @@ final class PickerPanelController: NSObject {
     /// 従来どおり何も起こらない。
     var onWillShow: (() -> Void)?
 
-    init(contentSource: PickerContentSource, resultsProvider: ResultsProvider, settings: Settings, showsItemMetadata: Bool = true) {
+    init(contentSource: PickerContentSource, resultsProvider: ResultsProvider, settings: Settings, showsItemMetadata: Bool = true, isTopDown: Bool = false) {
         self.contentSource = contentSource
         self.settings = settings
         let contentRect = NSRect(origin: .zero, size: Self.panelSize)
         panel = PickerPanel(contentRect: contentRect)
-        pickerViewController = PickerViewController(resultsProvider: resultsProvider, settings: settings, contentSource: contentSource, showsItemMetadata: showsItemMetadata)
+        pickerViewController = PickerViewController(resultsProvider: resultsProvider, settings: settings, contentSource: contentSource, showsItemMetadata: showsItemMetadata, isTopDown: isTopDown)
         super.init()
 
         panel.contentViewController = pickerViewController
