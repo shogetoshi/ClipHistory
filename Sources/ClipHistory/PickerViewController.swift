@@ -365,6 +365,15 @@ final class PickerViewController: NSViewController {
             return true
         }
 
+        if let editSnippetSourceHotKey = Config.shared.editSnippetSourceHotKey, matchesHotKey(event, editSnippetSourceHotKey) {
+            // 編集モードでなければソース編集を開始する。編集モード中の再押下は
+            // nvim へ素通ししても意味が無いため、握りつぶして何もしない。
+            if !isEditingInNvim {
+                beginSnippetSourceEdit()
+            }
+            return true
+        }
+
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 
         // Issue 0014: ⌃W / ⌃U（fzfライクな検索欄編集）は専用のハンドラに委ねる。
@@ -493,6 +502,26 @@ final class PickerViewController: NSViewController {
         }
 
         nvimEditController.begin(text: text)
+    }
+
+    /// 選択中の項目のソースファイル本体を nvim で開く（Issue 0032）。
+    /// Snippet の .md ファイルを、そのアイテムの見出し行を開いた状態で編集するためのもの。
+    /// 複数選択の印は無視し、常に選択行1件のソースを対象にする。
+    /// ソースファイルの概念が無いクリップボード履歴のパネルでは何も起きず、ビープだけが鳴る。
+    private func beginSnippetSourceEdit() {
+        guard !isEditingInNvim else { return }
+
+        guard let item = viewModel.item(at: tableView.selectedRow) else {
+            NSSound.beep()
+            return
+        }
+
+        guard let location = contentSource.sourceLocation(for: item) else {
+            NSSound.beep()
+            return
+        }
+
+        nvimEditController.begin(fileURL: URL(fileURLWithPath: location.filePath), line: location.lineNumber)
     }
 
     /// previewWidthConstraint を指定した比率で作り直し、有効/無効状態を保ったまま差し替える。

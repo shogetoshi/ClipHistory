@@ -517,6 +517,30 @@ struct ConfigTests {
         #expect(config.editInNvimHotKey == nil)
     }
 
+    @Test("[hotkey] の edit_snippet_source が無い場合は editSnippetSourceHotKey が nil になる")
+    func editSnippetSourceHotKeyIsNilWhenAbsent() throws {
+        let config = try Config.parse("")
+        #expect(config.editSnippetSourceHotKey == nil)
+    }
+
+    @Test("[hotkey] の edit_snippet_source が読み込まれる")
+    func editSnippetSourceHotKeyIsLoadedFromConfig() throws {
+        let config = try Config.parse("""
+        [hotkey]
+        edit_snippet_source = "command+shift+e"
+        """)
+        #expect(config.editSnippetSourceHotKey == HotKeyBindingParser.parse("command+shift+e"))
+    }
+
+    @Test("[hotkey] の edit_snippet_source が不正な場合は editSnippetSourceHotKey が nil になる")
+    func editSnippetSourceHotKeyIsNilWhenInvalid() throws {
+        let config = try Config.parse("""
+        [hotkey]
+        edit_snippet_source = "invalid"
+        """)
+        #expect(config.editSnippetSourceHotKey == nil)
+    }
+
     @Test("[hotkey] の toggle_snippet_panel が読み込まれる")
     func hotKeyBindingsLoadsToggleSnippetPanel() throws {
         let config = try Config.parse("""

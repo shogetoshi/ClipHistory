@@ -11,6 +11,9 @@ protocol PickerContentSource {
     func editableText(for item: HistoryItem) -> String?
     /// 確定時に `NSPasteboard` へ書き戻す。書き戻す内容が無ければ false を返す
     func writeToPasteboard(_ item: HistoryItem) -> Bool
+    /// 選択項目の出どころ（ソースファイルのパスと行番号）。ソースファイルの概念が無い
+    /// 実装では nil を返す（Issue 0032）
+    func sourceLocation(for item: HistoryItem) -> SnippetSourceLocation?
 }
 
 /// クリップボード履歴用の実装。
@@ -55,5 +58,10 @@ final class HistoryContentSource: PickerContentSource {
             NSLog("ClipHistory: failed to write pasteboard: \(error)")
         }
         return true
+    }
+
+    /// クリップボード履歴の項目にはソースファイルという概念が無いため常に nil を返す（Issue 0032）。
+    func sourceLocation(for item: HistoryItem) -> SnippetSourceLocation? {
+        nil
     }
 }

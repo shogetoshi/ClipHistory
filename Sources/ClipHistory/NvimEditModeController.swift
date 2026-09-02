@@ -45,6 +45,29 @@ final class NvimEditModeController: NSObject {
             NSSound.beep()
             return false
         }
+        return start(session: session)
+    }
+
+    /// 選択中の Snippet アイテムのソース .md ファイル本体を、その見出し行を開いた状態で
+    /// nvim で編集するモードへ入る（Issue 0032）。
+    @discardableResult
+    func begin(fileURL: URL, line: Int) -> Bool {
+        guard !isEditing else { return false }
+
+        let session: NvimEditSession
+        do {
+            session = try NvimEditSession(fileURL: fileURL, line: line)
+        } catch {
+            NSLog("ClipHistory: NvimEditSession(fileURL:line:) failed: \(error)")
+            NSSound.beep()
+            return false
+        }
+        return start(session: session)
+    }
+
+    /// `begin(text:)` / `begin(fileURL:line:)` に共通の、ターミナルビューの生成・配置・
+    /// nvim プロセスの起動・フォーカス移動・状態更新を行う（Issue 0032）。
+    private func start(session: NvimEditSession) -> Bool {
         self.session = session
 
         let terminal = LocalProcessTerminalView(frame: container.bounds)

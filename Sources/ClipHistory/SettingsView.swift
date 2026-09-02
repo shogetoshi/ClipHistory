@@ -45,6 +45,11 @@ final class SettingsViewModel: ObservableObject {
         } else {
             displays.append((label: "Vim編集モードへ", value: "未設定（無効）"))
         }
+        if let editSnippetSourceHotKey = Config.shared.editSnippetSourceHotKey {
+            displays.append((label: "Snippetソース編集モードへ", value: Self.hotKeyDisplayString(editSnippetSourceHotKey)))
+        } else {
+            displays.append((label: "Snippetソース編集モードへ", value: "未設定（無効）"))
+        }
         self.hotKeyDisplays = displays
     }
 
