@@ -125,6 +125,7 @@ ClipHistory の行が残っていれば **「−」ボタンで削除**します
 | Tab | 選択行に複数選択の印を付け / 外し、選択を1つ下（未来方向）へ移す |
 | ⇧Tab | 同じく印をトグルし、選択を1つ上（過去方向）へ移す |
 | ⌘E（`config.toml`の`[hotkey]`の`edit_in_nvim`で設定。既定は`"command+e"`） | 選択項目（印がある場合は結合後のテキスト）を nvim で編集 |
+| `config.toml`の`[hotkey]`の`edit_snippet_source`で設定（例は`"command+shift+e"`） | Snippet パネルで、選択項目の元になった `.md` ファイル本体をその見出し行にカーソルを置いて nvim で開く。保存して終了してもクリップボードへは反映されない |
 | ⌘↩ | nvim 編集を確定 |
 | ⌘. | nvim 編集を破棄 |
 | ⌃A / ⌃E / ⌃B / ⌃F / ⌃D / ⌃K / ⌃Y | 検索欄のカーソル移動・削除（macOS 標準のまま fzf と同じ操作感） |
@@ -207,15 +208,16 @@ direct_vim_edit = "command+ctrl+shift+c" # パネルを開かず直接nvim編集
 paste_and_cycle_previous = "command+ctrl+v" # 連続貼り付け
 toggle_snippet_panel = "ctrl+command+s"      # Snippetパネルの表示 / 非表示
 edit_in_nvim = "command+e"                  # パネル内でnvim編集を開始するキー
+edit_snippet_source = "command+shift+e"      # Snippetのソース.mdをnvimで開くキー
 ```
 
 `[hotkey]` の値は `"モディファイヤ+...+キー"` 形式の文字列です。モディファイヤは
 `command`/`ctrl`/`option`/`shift`（重複不可、1つ以上必須）、キーは `a`-`z` / `0`-`9` /
 `enter` / `space` / `escape`（すべて小文字）が使えます。**書かなかったアクションはホットキーとして
 登録されず、そのショートカットキーは使えなくなります**（他の設定項目と異なり既定値へのフォールバックはありません）。
-なお `edit_in_nvim`（Vim編集モードへ入るキー）だけは他の6項目と異なり、システム全体へ
-グローバル登録されるものではなく、ClipHistoryのパネルにフォーカスがある時だけ効くローカルな
-キー操作です。
+なお `edit_in_nvim`（Vim編集モードへ入るキー）と `edit_snippet_source`（Snippetソース編集モードへ
+入るキー）の2項目だけは他の6項目と異なり、システム全体へグローバル登録されるものではなく、
+ClipHistoryのパネルにフォーカスがある時だけ効くローカルなキー操作です。
 
 `[nvim.env]` の値はシェル展開されないリテラルです。`PATH` の追加は `init-pre.lua` で
 `vim.env.PATH = vim.env.PATH .. ":/opt/hoge/bin"` と書いてください。
