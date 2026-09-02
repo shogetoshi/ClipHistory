@@ -22,6 +22,9 @@ final class PickerViewModel {
     /// Snippet にはアプリ名も時刻も無いため副情報を出さない（Issue 0030）。
     private let showsItemMetadata: Bool
 
+    /// 検索窓を上に、結果を上から下へ表示するレイアウトかどうか（Issue 0031、Snippet 用）。
+    private let isTopDown: Bool
+
     private(set) var items: [HistoryItem] = []
 
     /// tabキーによる複数選択（印付け）の状態（Issue 0023）。検索の絞り込みが変わっても
@@ -40,9 +43,10 @@ final class PickerViewModel {
         return formatter
     }()
 
-    init(resultsProvider: ResultsProvider, showsItemMetadata: Bool = true) {
+    init(resultsProvider: ResultsProvider, showsItemMetadata: Bool = true, isTopDown: Bool = false) {
         self.resultsProvider = resultsProvider
         self.showsItemMetadata = showsItemMetadata
+        self.isTopDown = isTopDown
     }
 
     var count: Int { items.count }
@@ -74,8 +78,10 @@ final class PickerViewModel {
             // resultLimit は起動時に読み込まれた config.toml の値（Config.shared）を使う
             // （設定はconfig.tomlに統一し、GUIからの変更はできない。Issue 0025）。
             // プロバイダは最新順（先頭が最上位）で返すが、履歴なので最新を下に置きたいため
-            // ここで反転する（Issue 0003）。
-            items = Array(try resultsProvider.results(for: query, limit: Config.shared.resultLimit).reversed())
+            // ここで反転する（Issue 0003）。ただし isTopDown の場合（Snippet）は上から下へ
+            // 表示するため、プロバイダが返した順のまま反転しない（Issue 0031）。
+            let results = try resultsProvider.results(for: query, limit: Config.shared.resultLimit)
+            items = isTopDown ? results : Array(results.reversed())
         } catch {
             items = []
             NSLog("ClipHistory: ResultsProvider.results(for:) failed: \(error)")
