@@ -46,6 +46,12 @@ final class NvimEditSession {
     /// nvim が `:w` で保存したかどうかを、この日時からの変化で判定するために保持する。
     /// 取得できなかった場合は nil とし、その場合は「保存されていない」扱いにする。
     private let sourceModificationDate: Date?
+    /// `savedText()` が読み戻しを行うかどうか。既存の一時ファイル編集では `true`、
+    /// 利用者のファイル本体を開く編集（Issue 0032）では `false` にし、
+    /// 編集結果をクリップボードへ書き戻さないようにする。
+    private let readsBackSavedText: Bool
+    /// 起動時にカーソルを置く行番号（Issue 0032）。一時ファイル編集では nil。
+    private let initialLine: Int?
 
     /// nvim の絶対パスを解決する。
     /// GUI アプリ（`.app` バンドル）としての起動時、プロセスの PATH には
@@ -158,6 +164,59 @@ final class NvimEditSession {
         self.sourceModificationDate = try? sourceURL.resourceValues(
             forKeys: [.contentModificationDateKey]
         ).contentModificationDate
+
+        self.readsBackSavedText = true
+        self.initialLine = nil
+    }
+
+    /// 既存ファイル本体を、指定行にカーソルを置いて開くセッション（Issue 0032）。
+    /// 一時ファイルへの複製ではなく利用者のファイルそのものを開くため、
+    /// 編集結果の読み戻しは行わない（保存して終了してもクリップボードへは反映しない）。
+    init(
+        fileURL: URL,
+        line: Int,
+        environment: [String: String] = Config.shared.nvimEnvironment,
+        nvimInitPreURL: URL? = AppPaths.nvimInitPreURL(),
+        nvimInitURL: URL? = AppPaths.nvimInitURL()
+    ) throws {
+        // ディレクトリを作る前に nvim の絶対パスを解決しておく。
+        // ここで見つからず throw した場合、ディレクトリを作らずに済むため後片付けが不要になる。
+        self.nvimPath = try Self.resolveNvimPath()
+        self.environment = environment
+        // 存在しないファイルを nvim に渡すとエラーメッセージが出てしまうため、
+        // ここで1回だけ存在確認し、無ければ以降 nil のまま扱う（起動コマンドに何も加えない）。
+        self.nvimInitPrePath = nvimInitPreURL.flatMap {
+            FileManager.default.fileExists(atPath: $0.path) ? $0.path : nil
+        }
+        self.nvimInitPath = nvimInitURL.flatMap {
+            FileManager.default.fileExists(atPath: $0.path) ? $0.path : nil
+        }
+
+        // ディレクトリ名は短くする。UNIX ドメインソケットのパス長には104バイトの上限があり、
+        // `temporaryDirectory` 配下に長い名前を作るとソケットパスがこれを超えかねないため。
+        let directoryName = "ch-" + UUID().uuidString.prefix(8)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(directoryName)
+
+        // クリップボードには認証情報が入りうるため、他ユーザーから読めないよう 0700 で作成する。
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        self.sessionDirectory = directory
+
+        // 利用者のファイル本体をそのまま開くため、一時ディレクトリには何も書き出さない。
+        // 一時ディレクトリは `socketURL` の置き場としてのみ使う。`cleanUp()` はこの
+        // 一時ディレクトリだけを削除するため、`sourceURL`（利用者のファイル）は消えない。
+        self.sourceURL = fileURL
+        self.socketURL = directory.appendingPathComponent("s")
+
+        // 読み戻しをしないため、以下の2つは使わない値のまま保持する。
+        self.sourceEndsWithNewline = false
+        self.sourceModificationDate = nil
+
+        self.readsBackSavedText = false
+        self.initialLine = line
     }
 
     /// `LocalProcessTerminalView.startProcess(executable:args:)` にそのまま渡す実行ファイル。
@@ -196,6 +255,10 @@ final class NvimEditSession {
         if let nvimInitPath {
             execParts.append("-c \(Self.shellSingleQuoteEscape(Self.luaDofileCommand(nvimInitPath)))")
         }
+        // 起動時のカーソル行（Issue 0032）。指定があれば `--` の直前に `+<行番号>` を渡す。
+        if let initialLine {
+            execParts.append(Self.shellSingleQuoteEscape("+\(initialLine)"))
+        }
         execParts.append("-- \(Self.shellSingleQuoteEscape(sourceURL.path))")
 
         var parts = exports.isEmpty ? [] : [exports.joined(separator: "; ")]
@@ -210,6 +273,11 @@ final class NvimEditSession {
     /// 区別できる）。保存されていないと判断した場合（更新日時が変化していない、
     /// `init` 時に日時を取得できなかった、ファイルが既に存在しない等）は nil を返す。
     func savedText() throws -> String? {
+        // 利用者のファイル本体を開くセッション（Issue 0032）では、編集結果を
+        // クリップボードへ書き戻さないため常に nil を返す。
+        guard readsBackSavedText else {
+            return nil
+        }
         guard let sourceModificationDate else {
             return nil
         }
