@@ -49,6 +49,13 @@ public struct Config: Equatable {
     /// （その場合この機能は呼び出せなくなる、design 10.2）。
     public var editInNvimHotKey: HotKeyConfig?
 
+    /// TOML の [hotkey] テーブルの `edit_snippet_source` から読み込んだ、Snippet パネルで
+    /// 選択中アイテムのソース .md ファイル本体を nvim で開くキー。`hotKeyBindings` とは異なり
+    /// グローバル登録されず、パネルにフォーカスがある時だけローカルに判定される。
+    /// 他のホットキーと同様、値が無い・不正な場合は既定値へフォールバックせず nil のままにする
+    /// （その場合この機能は呼び出せなくなる、design 10.2）。
+    public var editSnippetSourceHotKey: HotKeyConfig?
+
     public static let empty = Config(
         nvimEnvironment: [:],
         cycleTimeout: 10,
@@ -62,7 +69,8 @@ public struct Config: Equatable {
         inlineBlobThreshold: 64 * 1024,
         snippetDirectories: [],
         hotKeyBindings: [:],
-        editInNvimHotKey: nil
+        editInNvimHotKey: nil,
+        editSnippetSourceHotKey: nil
     )
 
     public init(
@@ -78,7 +86,8 @@ public struct Config: Equatable {
         inlineBlobThreshold: Int = 64 * 1024,
         snippetDirectories: [String] = [],
         hotKeyBindings: [HotKeyAction: HotKeyConfig] = [:],
-        editInNvimHotKey: HotKeyConfig? = nil
+        editInNvimHotKey: HotKeyConfig? = nil,
+        editSnippetSourceHotKey: HotKeyConfig? = nil
     ) {
         self.nvimEnvironment = nvimEnvironment
         self.cycleTimeout = cycleTimeout
@@ -93,6 +102,7 @@ public struct Config: Equatable {
         self.snippetDirectories = snippetDirectories
         self.hotKeyBindings = hotKeyBindings
         self.editInNvimHotKey = editInNvimHotKey
+        self.editSnippetSourceHotKey = editSnippetSourceHotKey
     }
 
     /// TOML テキストをパースして組み立てる。未知のテーブル・未知のキーはエラーにせず無視する
@@ -254,6 +264,15 @@ public struct Config: Equatable {
             }
         }
 
+        var editSnippetSourceHotKey: HotKeyConfig?
+        if let value = tables["hotkey"]?["edit_snippet_source"] {
+            if let binding = HotKeyBindingParser.parse(value) {
+                editSnippetSourceHotKey = binding
+            } else {
+                NSLog("ClipHistory: Config.parse() invalid [hotkey] edit_snippet_source value: \(value), hotkey disabled")
+            }
+        }
+
         return Config(
             nvimEnvironment: nvimEnvironment,
             cycleTimeout: cycleTimeout,
@@ -267,7 +286,8 @@ public struct Config: Equatable {
             inlineBlobThreshold: inlineBlobThreshold,
             snippetDirectories: snippetDirectories,
             hotKeyBindings: hotKeyBindings,
-            editInNvimHotKey: editInNvimHotKey
+            editInNvimHotKey: editInNvimHotKey,
+            editSnippetSourceHotKey: editSnippetSourceHotKey
         )
     }
 
