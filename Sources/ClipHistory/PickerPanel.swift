@@ -1,3 +1,4 @@
+import Carbon.HIToolbox
 import Cocoa
 
 /// ホットキーで呼び出される検索パネル本体（設計書 7.1）。
@@ -35,6 +36,36 @@ final class PickerPanel: NSPanel {
         // 角丸背景は contentViewController のルートビュー（PanelBackgroundView）側で描く。
         // ここで contentView に背景ビューを設定しても contentViewController の代入時に
         // 丸ごと置き換えられてしまうため。
+    }
+
+    /// 日本語キーボードの ¥ キー（JIS Yen）を \ として入力できるようにする（Issue 0033）。
+    /// 検索欄・埋め込みnvimターミナルのどちらでフォーカスしていても、修飾キーなしで
+    /// ¥ が入力された場合に限り characters を \ に差し替えてから通常のイベント処理に渡す。
+    /// ⇧¥（|）や ⌥¥ など修飾付きの場合はこの変換の対象外とする。
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown,
+            event.keyCode == UInt16(kVK_JIS_Yen),
+            event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                .subtracting([.capsLock, .numericPad, .function]).isEmpty,
+            event.characters == "¥"
+        {
+            if let backslashEvent = NSEvent.keyEvent(
+                with: event.type,
+                location: event.locationInWindow,
+                modifierFlags: event.modifierFlags,
+                timestamp: event.timestamp,
+                windowNumber: event.windowNumber,
+                context: nil,
+                characters: "\\",
+                charactersIgnoringModifiers: "\\",
+                isARepeat: event.isARepeat,
+                keyCode: event.keyCode
+            ) {
+                super.sendEvent(backslashEvent)
+                return
+            }
+        }
+        super.sendEvent(event)
     }
 }
 
