@@ -185,4 +185,9 @@ final class DirectVimEditPanel: NSPanel {
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
+
+    /// 日本語キーボードの ¥ キー（JIS Yen）を \ として入力できるようにする（Issue 0033）。
+    override func sendEvent(_ event: NSEvent) {
+        super.sendEvent(event.replacingJISYenWithBackslash())
+    }
 }

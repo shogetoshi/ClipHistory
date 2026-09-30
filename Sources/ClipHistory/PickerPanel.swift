@@ -38,34 +38,40 @@ final class PickerPanel: NSPanel {
         // 丸ごと置き換えられてしまうため。
     }
 
+    override func sendEvent(_ event: NSEvent) {
+        super.sendEvent(event.replacingJISYenWithBackslash())
+    }
+}
+
+extension NSEvent {
     /// 日本語キーボードの ¥ キー（JIS Yen）を \ として入力できるようにする（Issue 0033）。
     /// 検索欄・埋め込みnvimターミナルのどちらでフォーカスしていても、修飾キーなしで
-    /// ¥ が入力された場合に限り characters を \ に差し替えてから通常のイベント処理に渡す。
-    /// ⇧¥（|）や ⌥¥ など修飾付きの場合はこの変換の対象外とする。
-    override func sendEvent(_ event: NSEvent) {
-        if event.type == .keyDown,
-            event.keyCode == UInt16(kVK_JIS_Yen),
-            event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    /// ¥ が入力された場合に限り characters を \ に差し替えたイベントを返す。
+    /// ⇧¥（|）や ⌥¥ など修飾付きの場合はこの変換の対象外とし、対象外・生成失敗時は self を返す。
+    /// `PickerPanel` と `DirectVimEditPanel` の両方の `sendEvent(_:)` から利用する。
+    func replacingJISYenWithBackslash() -> NSEvent {
+        if type == .keyDown,
+            keyCode == UInt16(kVK_JIS_Yen),
+            modifierFlags.intersection(.deviceIndependentFlagsMask)
                 .subtracting([.capsLock, .numericPad, .function]).isEmpty,
-            event.characters == "¥"
+            characters == "¥"
         {
             if let backslashEvent = NSEvent.keyEvent(
-                with: event.type,
-                location: event.locationInWindow,
-                modifierFlags: event.modifierFlags,
-                timestamp: event.timestamp,
-                windowNumber: event.windowNumber,
+                with: type,
+                location: locationInWindow,
+                modifierFlags: modifierFlags,
+                timestamp: timestamp,
+                windowNumber: windowNumber,
                 context: nil,
                 characters: "\\",
                 charactersIgnoringModifiers: "\\",
-                isARepeat: event.isARepeat,
-                keyCode: event.keyCode
+                isARepeat: isARepeat,
+                keyCode: keyCode
             ) {
-                super.sendEvent(backslashEvent)
-                return
+                return backslashEvent
             }
         }
-        super.sendEvent(event)
+        return self
     }
 }
 
